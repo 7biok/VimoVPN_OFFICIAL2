@@ -85,11 +85,13 @@ class PaymentProcess(StatesGroup):
     waiting_for_email = State()
     waiting_for_payment_method = State()
     waiting_for_promo_code = State()
+    waiting_for_cryptobot_payment = State()
 
  
 class TopUpProcess(StatesGroup):
     waiting_for_amount = State()
     waiting_for_topup_method = State()
+    waiting_for_cryptobot_topup_payment = State()
 
 
 class SupportDialog(StatesGroup):
@@ -705,13 +707,27 @@ def get_user_router() -> Router:
         }
         try:
             if callback.data == "topup_pay_cryptobot":
-                pay_url = await _create_cryptobot_invoice(
+                result = await _create_cryptobot_invoice(
                     user_id=user_id,
                     price_rub=float(amount),
                     months=0,
                     host_name="",
                     state_data=state_data,
                 )
+                if result:
+                    pay_url, invoice_id = result
+                    # Сохраняем invoice_id для проверки
+                    await state.update_data(cryptobot_invoice_id=invoice_id)
+                    await state.set_state(TopUpProcess.waiting_for_cryptobot_topup_payment)
+                    
+                    await callback.message.edit_text(
+                        "Нажмите на кнопку ниже для оплаты:\n\n"
+                        "💡 После оплаты нажмите «Проверить платёж» для подтверждения.",
+                        reply_markup=keyboards.create_payment_with_check_keyboard(pay_url, "check_cryptobot_topup_payment")
+                    )
+                else:
+                    await callback.message.edit_text("❌ Не удалось создать счёт CryptoBot. Попробуйте другой способ оплаты.")
+                    await state.clear()
             else:
                 pay_url = await _create_heleket_payment_request(
                     user_id=user_id,
@@ -720,19 +736,121 @@ def get_user_router() -> Router:
                     host_name="",
                     state_data=state_data,
                 )
-            if pay_url:
-                await callback.message.edit_text(
-                    "Нажмите на кнопку ниже для оплаты:",
-                    reply_markup=keyboards.create_payment_keyboard(pay_url)
-                )
-                await state.clear()
-            else:
-                await callback.message.edit_text("❌ Не удалось создать счёт. Попробуйте другой способ оплаты.")
-                await state.clear()
+                if pay_url:
+                    await callback.message.edit_text(
+                        "Нажмите на кнопку ниже для оплаты:",
+                        reply_markup=keyboards.create_payment_keyboard(pay_url)
+                    )
+                    await state.clear()
+                else:
+                    await callback.message.edit_text("❌ Не удалось создать счёт. Попробуйте другой способ оплаты.")
+                    await state.clear()
         except Exception as e:
             logger.error(f"Не удалось создать счет для пополнения: {e}", exc_info=True)
             await callback.message.edit_text("❌ Не удалось создать счёт. Попробуйте другой способ оплаты.")
             await state.clear()
+
+    @user_router.callback_query(TopUpProcess.waiting_for_cryptobot_topup_payment, F.data == "check_cryptobot_topup_payment")
+    async def check_cryptobot_topup_payment_handler(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+        """Обработчик проверки статуса платежа CryptoBot для пополнения баланса"""
+        await callback.answer("Проверяю статус платежа...")
+        
+        data = await state.get_data()
+        invoice_id = data.get('cryptobot_invoice_id')
+        
+        if not invoice_id:
+            await callback.message.edit_text("❌ Не найден ID счета для проверки.")
+            await state.clear()
+            return
+        
+        cryptobot_token = get_setting('cryptobot_token')
+        if not cryptobot_token:
+            logger.error("CryptoBot: не задан cryptobot_token для проверки платежа пополнения")
+            await callback.message.edit_text("❌ Ошибка конфигурации. Обратитесь к администратору.")
+            await state.clear()
+            return
+        
+        try:
+            cp = CryptoPay(cryptobot_token)
+            # Получаем информацию о счете
+            invoices = await cp.get_invoices(invoice_ids=[invoice_id])
+            
+            if not invoices or len(invoices) == 0:
+                await callback.answer("❌ Счет не найден", show_alert=True)
+                return
+            
+            invoice = invoices[0]
+            
+            # Получаем статус счета
+            status = None
+            try:
+                status = getattr(invoice, "status", None)
+            except Exception:
+                pass
+            
+            if not status and isinstance(invoice, dict):
+                status = invoice.get("status")
+            
+            logger.info(f"CryptoBot проверка платежа пополнения: invoice_id={invoice_id}, status={status}")
+            
+            if status == "paid":
+                # Платеж оплачен! Обрабатываем его
+                await callback.answer("✅ Платеж найден! Обрабатываю...", show_alert=True)
+                
+                # Получаем payload из счета
+                payload_string = None
+                try:
+                    payload_string = getattr(invoice, "payload", None)
+                except Exception:
+                    pass
+                
+                if not payload_string and isinstance(invoice, dict):
+                    payload_string = invoice.get("payload")
+                
+                if not payload_string:
+                    logger.error(f"CryptoBot проверка пополнения: не найден payload для счета {invoice_id}")
+                    await callback.message.edit_text("❌ Ошибка обработки платежа. Обратитесь в поддержку.")
+                    await state.clear()
+                    return
+                
+                # Разбираем payload
+                parts = payload_string.split(':')
+                if len(parts) < 9:
+                    logger.error(f"CryptoBot проверка пополнения: некорректный формат payload: {payload_string}")
+                    await callback.message.edit_text("❌ Ошибка обработки платежа. Обратитесь в поддержку.")
+                    await state.clear()
+                    return
+                
+                metadata = {
+                    "user_id": parts[0],
+                    "months": parts[1],
+                    "price": parts[2],
+                    "action": parts[3],
+                    "key_id": parts[4],
+                    "host_name": parts[5],
+                    "plan_id": parts[6],
+                    "customer_email": parts[7] if parts[7] != 'None' else None,
+                    "payment_method": parts[8],
+                    "promo_code": (parts[9] if len(parts) > 9 and parts[9] else None),
+                }
+                
+                # Обрабатываем успешный платеж
+                await process_successful_payment(bot, metadata)
+                await callback.message.edit_text("✅ Платеж успешно обработан! Баланс пополнен.")
+                await state.clear()
+                
+            elif status == "active":
+                # Счет создан, но еще не оплачен
+                await callback.answer("⏳ Платеж еще не получен. Пожалуйста, завершите оплату и нажмите кнопку снова.", show_alert=True)
+                
+            else:
+                # Другие статусы (expired, cancelled и т.д.)
+                await callback.answer(f"❌ Статус платежа: {status}. Пожалуйста, создайте новый счет.", show_alert=True)
+                await state.clear()
+                
+        except Exception as e:
+            logger.error(f"CryptoBot: ошибка при проверке счёта пополнения {invoice_id}: {e}", exc_info=True)
+            await callback.answer("❌ Ошибка при проверке платежа. Попробуйте позже.", show_alert=True)
 
     @user_router.callback_query(TopUpProcess.waiting_for_topup_method, F.data == "topup_pay_tonconnect")
     async def topup_pay_tonconnect(callback: types.CallbackQuery, state: FSMContext):
@@ -2210,7 +2328,7 @@ def get_user_router() -> Router:
 
         final_price_float = float(price_rub_decimal)
 
-        pay_url = await _create_cryptobot_invoice(
+        result = await _create_cryptobot_invoice(
             user_id=callback.from_user.id,
             price_rub=final_price_float,
             months=plan['months'],
@@ -2218,14 +2336,122 @@ def get_user_router() -> Router:
             state_data=data,
         )
         
-        if pay_url:
+        if result:
+            pay_url, invoice_id = result
+            # Сохраняем invoice_id в состояние для последующей проверки
+            await state.update_data(cryptobot_invoice_id=invoice_id)
+            await state.set_state(PaymentProcess.waiting_for_cryptobot_payment)
+            
             await callback.message.edit_text(
-                "Нажмите на кнопку ниже для оплаты:",
-                reply_markup=keyboards.create_payment_keyboard(pay_url)
+                "Нажмите на кнопку ниже для оплаты:\n\n"
+                "💡 После оплаты нажмите «Проверить платёж» для подтверждения.",
+                reply_markup=keyboards.create_payment_with_check_keyboard(pay_url, "check_cryptobot_payment")
             )
-            await state.clear()
         else:
             await callback.message.edit_text("❌ Не удалось создать счет CryptoBot. Попробуйте другой способ оплаты.")
+            await state.clear()
+
+    @user_router.callback_query(PaymentProcess.waiting_for_cryptobot_payment, F.data == "check_cryptobot_payment")
+    async def check_cryptobot_payment_handler(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+        """Обработчик проверки статуса платежа CryptoBot"""
+        await callback.answer("Проверяю статус платежа...")
+        
+        data = await state.get_data()
+        invoice_id = data.get('cryptobot_invoice_id')
+        
+        if not invoice_id:
+            await callback.message.edit_text("❌ Не найден ID счета для проверки.")
+            await state.clear()
+            return
+        
+        cryptobot_token = get_setting('cryptobot_token')
+        if not cryptobot_token:
+            logger.error("CryptoBot: не задан cryptobot_token для проверки платежа")
+            await callback.message.edit_text("❌ Ошибка конфигурации. Обратитесь к администратору.")
+            await state.clear()
+            return
+        
+        try:
+            cp = CryptoPay(cryptobot_token)
+            # Получаем информацию о счете
+            invoices = await cp.get_invoices(invoice_ids=[invoice_id])
+            
+            if not invoices or len(invoices) == 0:
+                await callback.answer("❌ Счет не найден", show_alert=True)
+                return
+            
+            invoice = invoices[0]
+            
+            # Получаем статус счета
+            status = None
+            try:
+                status = getattr(invoice, "status", None)
+            except Exception:
+                pass
+            
+            if not status and isinstance(invoice, dict):
+                status = invoice.get("status")
+            
+            logger.info(f"CryptoBot проверка платежа: invoice_id={invoice_id}, status={status}")
+            
+            if status == "paid":
+                # Платеж оплачен! Обрабатываем его
+                await callback.answer("✅ Платеж найден! Обрабатываю...", show_alert=True)
+                
+                # Получаем payload из счета
+                payload_string = None
+                try:
+                    payload_string = getattr(invoice, "payload", None)
+                except Exception:
+                    pass
+                
+                if not payload_string and isinstance(invoice, dict):
+                    payload_string = invoice.get("payload")
+                
+                if not payload_string:
+                    logger.error(f"CryptoBot проверка: не найден payload для счета {invoice_id}")
+                    await callback.message.edit_text("❌ Ошибка обработки платежа. Обратитесь в поддержку.")
+                    await state.clear()
+                    return
+                
+                # Разбираем payload
+                parts = payload_string.split(':')
+                if len(parts) < 9:
+                    logger.error(f"CryptoBot проверка: некорректный формат payload: {payload_string}")
+                    await callback.message.edit_text("❌ Ошибка обработки платежа. Обратитесь в поддержку.")
+                    await state.clear()
+                    return
+                
+                metadata = {
+                    "user_id": parts[0],
+                    "months": parts[1],
+                    "price": parts[2],
+                    "action": parts[3],
+                    "key_id": parts[4],
+                    "host_name": parts[5],
+                    "plan_id": parts[6],
+                    "customer_email": parts[7] if parts[7] != 'None' else None,
+                    "payment_method": parts[8],
+                    "promo_code": (parts[9] if len(parts) > 9 and parts[9] else None),
+                }
+                
+                # Обрабатываем успешный платеж
+                await process_successful_payment(bot, metadata)
+                await callback.message.edit_text("✅ Платеж успешно обработан!")
+                await state.clear()
+                
+            elif status == "active":
+                # Счет создан, но еще не оплачен
+                await callback.answer("⏳ Платеж еще не получен. Пожалуйста, завершите оплату и нажмите кнопку снова.", show_alert=True)
+                
+            else:
+                # Другие статусы (expired, cancelled и т.д.)
+                await callback.answer(f"❌ Статус платежа: {status}. Пожалуйста, создайте новый счет.", show_alert=True)
+                await state.clear()
+                
+        except Exception as e:
+            logger.error(f"CryptoBot: ошибка при проверке счёта {invoice_id}: {e}", exc_info=True)
+            await callback.answer("❌ Ошибка при проверке платежа. Попробуйте позже.", show_alert=True)
 
     @user_router.callback_query(PaymentProcess.waiting_for_payment_method, F.data == "pay_tonconnect")
     async def create_ton_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -2512,12 +2738,15 @@ async def _create_cryptobot_invoice(
     months: int,
     host_name: str,
     state_data: dict,
-) -> Optional[str]:
-    """Создать счёт в Telegram Crypto Pay и вернуть ссылку на оплату.
+) -> Optional[tuple[str, int]]:
+    """Создать счёт в Telegram Crypto Pay и вернуть ссылку на оплату и ID счета.
 
     - Конвертирует RUB в USDT по рыночному курсу.
     - Формирует payload в формате, ожидаемом обработчиком вебхука `/cryptobot-webhook`:
       `user_id:months:price:action:key_id:host_name:plan_id:customer_email:payment_method`.
+    
+    Returns:
+        tuple[str, int] | None: (pay_url, invoice_id) или None при ошибке
     """
     try:
         token = get_setting("cryptobot_token")
@@ -2557,17 +2786,30 @@ async def _create_cryptobot_invoice(
         )
 
         pay_url = None
+        invoice_id = None
+        
         try:
             # У разных обёрток могут отличаться имена полей
             pay_url = getattr(invoice, "pay_url", None) or getattr(invoice, "bot_invoice_url", None)
+            invoice_id = getattr(invoice, "invoice_id", None)
         except Exception:
             pass
+        
         if not pay_url and isinstance(invoice, dict):
             pay_url = invoice.get("pay_url") or invoice.get("bot_invoice_url") or invoice.get("url")
+            
+        if not invoice_id and isinstance(invoice, dict):
+            invoice_id = invoice.get("invoice_id")
+            
         if not pay_url:
             logger.error(f"CryptoBot: не удалось получить ссылку на оплату из ответа: {invoice}")
             return None
-        return str(pay_url)
+            
+        if not invoice_id:
+            logger.error(f"CryptoBot: не удалось получить invoice_id из ответа: {invoice}")
+            return None
+            
+        return (str(pay_url), int(invoice_id))
     except Exception as e:
         logger.error(f"CryptoBot: ошибка при создании счёта: {e}", exc_info=True)
         return None
