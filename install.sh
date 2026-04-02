@@ -8,7 +8,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 REPO_URL="https://github.com/tweopi/3xui-shopbot.git"
-PROJECT_DIR="3xui-shopbot"
+PROJECT_DIR="VimoVPN_OFFICIAL2"
 APP_PORT="1488"
 NGINX_CONF_FILE="/etc/nginx/sites-available/${PROJECT_DIR}.conf"
 NGINX_ENABLED_FILE="/etc/nginx/sites-enabled/${PROJECT_DIR}.conf"
@@ -270,11 +270,7 @@ if [ "$INSTALL_MODE" = "1" ]; then
     install_package "dig" "dnsutils"
 fi
 
-echo -e "\n${CYAN}Шаг 3: подготовка проекта...${NC}"
-if [ ! -d "$PROJECT_DIR" ]; then
-    git clone "$REPO_URL"
-fi
-cd "$PROJECT_DIR"
+
 
 SERVER_IP=$(get_server_ip)
 PUBLIC_BASE_URL=""
