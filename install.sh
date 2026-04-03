@@ -85,7 +85,7 @@ resolve_domain_ip() {
     local domain="$1"
     local ip=""
 
-    ip=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | head -n1)
+    ip=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | head -n1 || true)
     if [[ "$ip" =~ $ipv4_re ]]; then
         echo "$ip"
         return 0
@@ -100,7 +100,7 @@ resolve_domain_ip() {
     fi
 
     if command -v nslookup >/dev/null 2>&1; then
-        ip=$(nslookup -type=A "$domain" 2>/dev/null | awk '/^Address: /{print $2; exit}')
+        ip=$(nslookup -type=A "$domain" 2>/dev/null | awk '/^Address: /{print $2; exit}' || true)
         if [[ "$ip" =~ $ipv4_re ]]; then
             echo "$ip"
             return 0
@@ -108,7 +108,7 @@ resolve_domain_ip() {
     fi
 
     if command -v ping >/dev/null 2>&1; then
-        ip=$(ping -4 -c1 -W1 "$domain" 2>/dev/null | sed -n 's/.*(\([0-9.]*\)).*/\1/p' | head -n1)
+        ip=$(ping -4 -c1 -W1 "$domain" 2>/dev/null | sed -n 's/.*(\([0-9.]*\)).*/\1/p' | head -n1 || true)
         if [[ "$ip" =~ $ipv4_re ]]; then
             echo "$ip"
             return 0
@@ -116,6 +116,7 @@ resolve_domain_ip() {
     fi
 
     echo ""
+    return 0
 }
 
 configure_firewall() {
