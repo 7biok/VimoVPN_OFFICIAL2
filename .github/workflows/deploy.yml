@@ -29,14 +29,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate runner and secrets
+      - name: Validate runner and resolve compose command
+        shell: bash
         run: |
           test -n "$LETSENCRYPT_EMAIL" || { echo "LETSENCRYPT_EMAIL secret is required"; exit 1; }
           test -n "$SHOPBOT_SECRET_KEY" || { echo "SHOPBOT_SECRET_KEY secret is required"; exit 1; }
           docker version
-          docker compose version
+
+          if docker compose version >/dev/null 2>&1; then
+            echo "COMPOSE_CMD=docker compose" >> "$GITHUB_ENV"
+            docker compose version
+          elif command -v docker-compose >/dev/null 2>&1; then
+            echo "COMPOSE_CMD=docker-compose" >> "$GITHUB_ENV"
+            docker-compose version
+          else
+            echo "Neither 'docker compose' nor 'docker-compose' is available on this runner"
+            exit 1
+          fi
 
       - name: Prepare persistent directories
+        shell: bash
         run: |
           sudo mkdir -p \
             "$HOST_DATA_DIR/backups" \
@@ -48,15 +60,19 @@ jobs:
             "$HOST_CADDY_CONFIG_DIR"
 
       - name: Show deploy target
+        shell: bash
         run: |
           echo "Deploying to self-hosted runner on $(hostname)"
           echo "Domain: $APP_DOMAIN"
           echo "Runtime data: $HOST_DATA_DIR"
+          echo "Compose command: $COMPOSE_CMD"
 
       - name: Deploy stack
+        shell: bash
         run: |
-          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+          bash -lc "$COMPOSE_CMD -f docker-compose.prod.yml up -d --build --remove-orphans"
 
       - name: Show running services
+        shell: bash
         run: |
-          docker compose -f docker-compose.prod.yml ps
+          bash -lc "$COMPOSE_CMD -f docker-compose.prod.yml ps"

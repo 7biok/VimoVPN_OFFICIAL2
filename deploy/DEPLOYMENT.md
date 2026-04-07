@@ -12,7 +12,7 @@
 
 ## Что нужно на сервере один раз
 
-1. Установить Docker и Docker Compose plugin.
+1. Установить Docker и `docker compose` plugin либо `docker-compose`.
 2. Установить GitHub self-hosted runner именно для этого репозитория.
 3. Добавить пользователя runner в группу `docker`.
 4. Разрешить этому пользователю `sudo mkdir/chown` для каталога `/srv/vimovpn` либо подготовить каталоги заранее.

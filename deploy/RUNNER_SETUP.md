@@ -27,7 +27,7 @@ sudo chown -R github-runner:github-runner /srv/vimovpn
 ## 3. Минимальные требования
 
 - Docker Engine
-- Docker Compose plugin
+- `docker compose` plugin либо `docker-compose`
 - доступ в интернет для GitHub и Let's Encrypt
 - открытые `80/tcp` и `443/tcp`
 
