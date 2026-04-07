@@ -1,0 +1,85 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST: 2.26.108.92
+      DEPLOY_PORT: 22
+      DEPLOY_DOMAIN: vimovpn.icu
+      APP_DIR: /srv/vimovpn/app
+      APP_NAME: vimovpn
+      APP_PORT: 1488
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_USER" || { echo "DEPLOY_USER secret is required"; exit 1; }
+          test -n "$DEPLOY_SSH_KEY" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
+
+      - name: Configure SSH access
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure target directory exists
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR'"
+
+      - name: Sync project to server
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          rsync -az --delete \
+            --exclude-from=deploy/rsync-excludes.txt \
+            -e "ssh -i ~/.ssh/id_ed25519 -p $DEPLOY_PORT" \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
+
+      - name: Run remote deployment
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+          SHOPBOT_SECRET_KEY: ${{ secrets.SHOPBOT_SECRET_KEY }}
+        run: |
+          remote_env=(
+            "APP_DIR=$(printf '%q' "$APP_DIR")"
+            "APP_NAME=$(printf '%q' "$APP_NAME")"
+            "APP_PORT=$(printf '%q' "$APP_PORT")"
+            "DEPLOY_DOMAIN=$(printf '%q' "$DEPLOY_DOMAIN")"
+          )
+
+          if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+            remote_env+=("LETSENCRYPT_EMAIL=$(printf '%q' "$LETSENCRYPT_EMAIL")")
+          fi
+
+          if [ -n "${SHOPBOT_SECRET_KEY:-}" ]; then
+            remote_env+=("SHOPBOT_SECRET_KEY=$(printf '%q' "$SHOPBOT_SECRET_KEY")")
+          fi
+
+          ssh -i ~/.ssh/id_ed25519 -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$(printf '%s ' "${remote_env[@]}")bash $(printf '%q' "$APP_DIR/deploy/server-deploy.sh")"

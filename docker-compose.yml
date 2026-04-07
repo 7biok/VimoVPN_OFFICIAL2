@@ -2,6 +2,8 @@ services:
   3xui-shopbot:
     build: .
     restart: unless-stopped
+    environment:
+      SHOPBOT_SECRET_KEY: ${SHOPBOT_SECRET_KEY:-}
     ports:
       - '1488:1488'
     volumes:
