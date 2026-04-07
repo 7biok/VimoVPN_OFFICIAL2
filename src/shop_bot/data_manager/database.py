@@ -84,6 +84,7 @@ def initialize_db():
                     panel_type TEXT NOT NULL DEFAULT 'hiddify',
                     host_api_key TEXT,
                     host_proxy_path TEXT,
+                    host_client_proxy_path TEXT,
                     subscription_url TEXT,
                     ssh_host TEXT,
                     ssh_port INTEGER,
@@ -728,6 +729,9 @@ def run_migration():
             if 'host_proxy_path' not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN host_proxy_path TEXT")
                 logging.info(" -> Столбец 'host_proxy_path' успешно добавлен в 'xui_hosts'.")
+            if 'host_client_proxy_path' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN host_client_proxy_path TEXT")
+                logging.info(" -> Столбец 'host_client_proxy_path' успешно добавлен в 'xui_hosts'.")
             if 'subscription_url' not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN subscription_url TEXT")
                 logging.info(" -> Столбец 'subscription_url' успешно добавлен в 'xui_hosts'.")
@@ -986,6 +990,7 @@ def create_host(
     panel_type: str = "hiddify",
     api_key: str | None = None,
     proxy_path: str | None = None,
+    client_proxy_path: str | None = None,
 ):
     try:
         name = normalize_host_name(name)
@@ -1005,8 +1010,8 @@ def create_host(
                     """
                     INSERT INTO xui_hosts (
                         host_name, host_url, host_username, host_pass, host_inbound_id,
-                        panel_type, host_api_key, host_proxy_path, subscription_url
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        panel_type, host_api_key, host_proxy_path, host_client_proxy_path, subscription_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         name,
@@ -1017,6 +1022,7 @@ def create_host(
                         (panel_type or "hiddify").strip() or "hiddify",
                         (api_key or "").strip() or None,
                         (proxy_path or "").strip().strip("/") or None,
+                        (client_proxy_path or "").strip().strip("/") or None,
                         subscription_url,
                     ),
                 )
@@ -1092,6 +1098,7 @@ def update_host_hiddify_settings(
     host_name: str,
     api_key: str | None = None,
     proxy_path: str | None = None,
+    client_proxy_path: str | None = None,
     panel_type: str = "hiddify",
 ) -> bool:
     try:
@@ -1106,13 +1113,14 @@ def update_host_hiddify_settings(
             cursor.execute(
                 """
                 UPDATE xui_hosts
-                SET panel_type = ?, host_api_key = ?, host_proxy_path = ?
+                SET panel_type = ?, host_api_key = ?, host_proxy_path = ?, host_client_proxy_path = ?
                 WHERE TRIM(host_name) = TRIM(?)
                 """,
                 (
                     (panel_type or "hiddify").strip() or "hiddify",
                     (api_key or "").strip() or None,
                     (proxy_path or "").strip().strip("/") or None,
+                    (client_proxy_path or "").strip().strip("/") or None,
                     host_name_n,
                 ),
             )

@@ -520,8 +520,14 @@ def create_webhook_app(bot_controller_instance):
     @login_required
     def create_key_route():
         try:
-            user_id = int(request.form.get('user_id'))
+            raw_user_id = (request.form.get('user_id') or '').strip()
+            if not raw_user_id:
+                flash('Укажите пользователя для персонального ключа.', 'danger')
+                return redirect(request.referrer or url_for('admin_keys_page'))
+            user_id = int(raw_user_id)
             host_name = (request.form.get('host_name') or '').strip()
+            if not host_name:
+                return jsonify({"ok": False, "error": "host_required"}), 400
             xui_uuid = (request.form.get('xui_client_uuid') or '').strip()
             key_email = (request.form.get('key_email') or '').strip()
             expiry = request.form.get('expiry_date') or ''
@@ -584,8 +590,13 @@ def create_webhook_app(bot_controller_instance):
     @login_required
     def create_key_ajax_route():
         try:
-            user_id = int(request.form.get('user_id'))
+            raw_user_id = (request.form.get('user_id') or '').strip()
+            if not raw_user_id:
+                return jsonify({"ok": False, "error": "user_id_required"}), 400
+            user_id = int(raw_user_id)
             host_name = (request.form.get('host_name') or '').strip()
+            if not host_name:
+                return jsonify({"ok": False, "error": "host_required"}), 400
             xui_uuid = (request.form.get('xui_client_uuid') or '').strip()
             key_email = (request.form.get('key_email') or '').strip()
             expiry = request.form.get('expiry_date') or ''
@@ -663,8 +674,13 @@ def create_webhook_app(bot_controller_instance):
             if key_type == 'gift':
                 user_id = 0
             else:
-                user_id = int(request.form.get('user_id'))
+                raw_user_id = (request.form.get('user_id') or '').strip()
+                if not raw_user_id:
+                    return jsonify({"ok": False, "error": "user_id_required"}), 400
+                user_id = int(raw_user_id)
             host_name = (request.form.get('host_name') or '').strip()
+            if not host_name:
+                return jsonify({"ok": False, "error": "host_required"}), 400
             xui_uuid = (request.form.get('xui_client_uuid') or '').strip()
             key_email = (request.form.get('key_email') or '').strip()
             expiry = request.form.get('expiry_date') or ''
@@ -672,8 +688,8 @@ def create_webhook_app(bot_controller_instance):
             from datetime import datetime as _dt
             expiry_ms = int(_dt.fromisoformat(expiry).timestamp() * 1000) if expiry else 0
         except Exception as e:
-            print(f"Ошибка ввода: {e}")
-            raise SystemExit(1)
+            logger.warning(f"create_key_standalone_ajax_route: invalid input: {e}")
+            return jsonify({"ok": False, "error": str(e)}), 400
 
         if key_type == 'gift' and not key_email:
             try:
@@ -694,8 +710,8 @@ def create_webhook_app(bot_controller_instance):
             result = None
             logger.error(f"create_key_standalone_ajax_route: ошибка панели/хоста: {e}")
         if not result:
-            print("Ошибка: хост не вернул клиента")
-            raise SystemExit(1)
+            logger.warning("create_key_standalone_ajax_route: host did not return a client")
+            return jsonify({"ok": False, "error": "host_create_failed"}), 502
 
         new_id = add_new_key(user_id, host_name, result.get('client_uuid') or xui_uuid, key_email, result.get('expiry_timestamp_ms') or expiry_ms or 0)
         if comment and new_id:
@@ -1381,10 +1397,16 @@ def create_webhook_app(bot_controller_instance):
         host_name = (request.form.get('host_name') or '').strip()
         api_key = (request.form.get('host_api_key') or '').strip()
         proxy_path = (request.form.get('host_proxy_path') or '').strip().strip('/')
+        client_proxy_path = (request.form.get('host_client_proxy_path') or '').strip().strip('/')
         if not host_name:
             flash('Не указан хост для обновления Hiddify-настроек.', 'warning')
             return redirect(url_for('settings_page', tab='hosts'))
-        ok = update_host_hiddify_settings(host_name, api_key=api_key or None, proxy_path=proxy_path or None)
+        ok = update_host_hiddify_settings(
+            host_name,
+            api_key=api_key or None,
+            proxy_path=proxy_path or None,
+            client_proxy_path=client_proxy_path or None,
+        )
         flash(
             'Hiddify-настройки хоста обновлены.' if ok else 'Не удалось обновить Hiddify-настройки хоста.',
             'success' if ok else 'danger'
@@ -1618,6 +1640,7 @@ def create_webhook_app(bot_controller_instance):
             panel_type='hiddify',
             api_key=(request.form.get('host_api_key') or '').strip() or None,
             proxy_path=(request.form.get('host_proxy_path') or '').strip().strip('/') or None,
+            client_proxy_path=(request.form.get('host_client_proxy_path') or '').strip().strip('/') or None,
         )
         flash(f"Хост '{request.form['host_name']}' успешно добавлен.", 'success')
         return redirect(url_for('settings_page', tab='hosts'))

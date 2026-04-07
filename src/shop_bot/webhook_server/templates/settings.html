@@ -113,9 +113,14 @@
 								<input type="hidden" id="host_username" name="host_username" value="" />
 							</div>
 							<div class="form-group">
-								<label for="host_proxy_path">Proxy path:</label>
-								<input type="text" id="host_proxy_path" name="host_proxy_path" placeholder="secret-path" />
+								<label for="host_proxy_path">Admin proxy path:</label>
+								<input type="text" id="host_proxy_path" name="host_proxy_path" placeholder="admin-secret-path" />
 								<input type="hidden" id="host_pass" name="host_pass" value="" />
+							</div>
+							<div class="form-group">
+								<label for="host_client_proxy_path">Client proxy path:</label>
+								<input type="text" id="host_client_proxy_path" name="host_client_proxy_path" placeholder="client-secret-path" />
+								<small>Нужен для рабочих пользовательских ссылок. В Hiddify он часто отличается от admin path.</small>
 							</div>
 							<input type="hidden" id="host_inbound_id" name="host_inbound_id" value="0" />
 							<div class="form-group">
@@ -161,7 +166,8 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 					<input type="hidden" name="host_name" value="{{ host.host_name }}" />
 					<input class="form-control pill" type="text" name="host_api_key" placeholder="Admin API key / UUID" value="{{ host.host_api_key or '' }}" />
-					<input class="form-control pill" type="text" name="host_proxy_path" placeholder="Proxy path" value="{{ host.host_proxy_path or '' }}" style="margin-left:6px;" />
+					<input class="form-control pill" type="text" name="host_proxy_path" placeholder="Admin proxy path" value="{{ host.host_proxy_path or '' }}" style="margin-left:6px;" />
+					<input class="form-control pill" type="text" name="host_client_proxy_path" placeholder="Client proxy path" value="{{ host.host_client_proxy_path or '' }}" style="margin-left:6px;" />
 					<button type="submit" class="btn btn-outline-secondary btn-sm pill" style="margin-left:6px;">Сохранить Hiddify</button>
 				</form>
 

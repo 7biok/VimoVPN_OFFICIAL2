@@ -226,6 +226,12 @@ async def sync_keys_with_panels():
                                 f"Scheduler: Найден пользователь без имени/email на '{host_name}', пропускаю."
                             )
                             continue
+                        # Hiddify may keep a built-in default user that should not be imported into our DB.
+                        if orphan_email.lower() == 'default':
+                            logger.debug(
+                                f"Scheduler: Пропускаю служебного клиента '{orphan_email}' на '{host_name}'."
+                            )
+                            continue
                         # Extract user_id from email like: user12345-key1-...@telegram.bot
                         import re
                         m = re.search(r"user(\d+)", orphan_email)

@@ -35,21 +35,22 @@ class HiddifyHostConfig:
     host_name: str
     base_url: str
     api_key: str
-    proxy_path: str
+    admin_proxy_path: str
+    client_proxy_path: str
     subscription_url: str | None = None
 
     def admin_url(self, suffix: str = "") -> str:
         suffix = suffix.lstrip("/")
-        base = f"{self.base_url}/{self.proxy_path}/api/v2/admin"
+        base = f"{self.base_url}/{self.admin_proxy_path}/api/v2/admin"
         return f"{base}/{suffix}" if suffix else f"{base}/"
 
     def user_url(self, user_uuid: str, suffix: str = "") -> str:
         suffix = suffix.lstrip("/")
-        base = f"{self.base_url}/{self.proxy_path}/{user_uuid}/api/v2/user"
+        base = f"{self.base_url}/{self.client_proxy_path}/{user_uuid}/api/v2/user"
         return f"{base}/{suffix}" if suffix else f"{base}/"
 
     def user_panel_url(self, user_uuid: str) -> str:
-        return f"{self.base_url}/{self.proxy_path}/{user_uuid}/"
+        return f"{self.base_url}/{self.client_proxy_path}/{user_uuid}/"
 
 
 class HiddifyClient:
@@ -212,16 +213,21 @@ def _resolve_host_config(host_data: dict[str, Any]) -> HiddifyHostConfig:
         or derived_api_key
         or (host_data.get("host_username") if _looks_like_uuid(host_data.get("host_username")) else None)
     )
-    raw_proxy_path = (
+    raw_admin_proxy_path = (
         host_data.get("host_proxy_path")
         or derived_proxy_path
         or (str(host_data.get("host_pass") or "").strip().strip("/") or None)
     )
+    raw_client_proxy_path = (
+        host_data.get("host_client_proxy_path")
+        or None
+    )
 
     api_key = str(raw_api_key or "").strip()
-    proxy_path = str(raw_proxy_path or "").strip().strip("/")
+    admin_proxy_path = str(raw_admin_proxy_path or "").strip().strip("/")
+    client_proxy_path = str(raw_client_proxy_path or admin_proxy_path).strip().strip("/")
 
-    if not proxy_path:
+    if not admin_proxy_path:
         raise HiddifyPanelError(
             f"Host '{host_name}' is missing Hiddify proxy path. Fill 'host_proxy_path' or use a full admin URL."
         )
@@ -235,7 +241,8 @@ def _resolve_host_config(host_data: dict[str, Any]) -> HiddifyHostConfig:
         host_name=host_name,
         base_url=base_url,
         api_key=api_key,
-        proxy_path=proxy_path,
+        admin_proxy_path=admin_proxy_path,
+        client_proxy_path=client_proxy_path,
         subscription_url=subscription_url,
     )
 

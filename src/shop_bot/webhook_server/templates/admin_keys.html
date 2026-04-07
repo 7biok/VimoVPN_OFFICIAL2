@@ -34,13 +34,13 @@
           <select class="form-select rounded-3 select-soft" id="host_name" name="host_name" required>
             <option value="" selected disabled>Выберите хост...</option>
             {% for h in hosts %}
-            <option value="{{ h.host_name }}" data-proxy="{{ h.host_proxy_path or '' }}">{{ h.host_name }}</option>
+            <option value="{{ h.host_name }}" data-proxy="{{ h.host_client_proxy_path or h.host_proxy_path or '' }}">{{ h.host_name }}</option>
             {% endfor %}
           </select>
         </div>
       </div>
       <div class="col-12 col-sm-2">
-        <label class="form-label" for="inbound_id">Proxy Path</label>
+        <label class="form-label" for="inbound_id">Client Path</label>
         <input class="form-control rounded-3" type="text" id="inbound_id" placeholder="—" readonly />
       </div>
       <div class="col-12 col-sm-4">
@@ -550,6 +550,17 @@
     }
 
     async function doSubmit(){
+      const type = (keyTypeInput?.value || 'personal');
+      const userIdRaw = String(document.getElementById('user_id')?.value || '').trim();
+      const hostRaw = String(document.getElementById('host_name')?.value || '').trim();
+      if (type !== 'gift' && !userIdRaw) {
+        try { window.showToast('warning', 'Укажите пользователя для персонального ключа'); } catch(_){ }
+        return;
+      }
+      if (!hostRaw) {
+        try { window.showToast('warning', 'Выберите хост'); } catch(_){ }
+        return;
+      }
       // Обновим email перед сабмитом, чтобы гарантированно был сгенерирован под текущего пользователя
       await (async ()=>{ try { await maybeGenEmail(); } catch(_){} })();
       submitBtn.disabled = true; submitBtn.textContent = 'Создаю...';
@@ -590,7 +601,14 @@
           // Также сразу подтянем серверный partial, чтобы таблица была в актуальном состоянии
           try { await refreshContainerById('keys-tbody'); } catch(_){ }
         } else {
-          try { window.showToast('danger', 'Не удалось создать ключ'); } catch(_){ }
+          const err = String(data?.error || '');
+          let msg = 'Не удалось создать ключ';
+          if (err === 'user_id_required') msg = 'Укажите пользователя для персонального ключа';
+          else if (err === 'host_required') msg = 'Выберите хост';
+          else if (err === 'host_create_failed') msg = 'Панель Hiddify не создала пользователя. Проверьте настройки хоста';
+          else if (err) msg = `Не удалось создать ключ: ${err}`;
+          try { window.showToast('danger', msg); } catch(_){ }
+          return;
         }
       } catch (err) {
         try { window.showToast('danger', 'Ошибка при создании ключа'); } catch(_){ }
