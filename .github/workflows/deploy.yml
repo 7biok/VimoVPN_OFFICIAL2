@@ -64,3 +64,6 @@ jobs:
       - name: Show running services
         run: |
           docker compose -f docker-compose.prod.yml ps
+      - name: Show 
+        run: |
+          docker compose
