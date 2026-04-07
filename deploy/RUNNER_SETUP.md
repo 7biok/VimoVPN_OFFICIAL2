@@ -1,6 +1,6 @@
 # Self-Hosted Runner Setup
 
-Эта схема ожидает GitHub runner на сервере `2.26.108.92` с label `vimovpn-prod`.
+Эта схема использует любой `self-hosted` runner, доступный репозиторию.
 
 ## 1. Подготовьте пользователя
 
@@ -22,7 +22,6 @@ sudo chown -R github-runner:github-runner /srv/vimovpn
 Важно:
 
 - ставьте runner именно для этого репозитория;
-- добавьте label `vimovpn-prod`;
 - запускайте runner как service, а не в интерактивной сессии.
 
 ## 3. Минимальные требования
@@ -34,4 +33,4 @@ sudo chown -R github-runner:github-runner /srv/vimovpn
 
 ## 4. Проверка
 
-После установки runner должен появиться в списке репозитория как `Idle`, с label `vimovpn-prod`.
+После установки runner должен появиться в списке репозитория как `Idle`.

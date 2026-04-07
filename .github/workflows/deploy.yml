@@ -15,11 +15,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - vimovpn-prod
+    runs-on: self-hosted
     timeout-minutes: 30
     env:
       APP_DOMAIN: vimovpn.icu
@@ -64,6 +60,3 @@ jobs:
       - name: Show running services
         run: |
           docker compose -f docker-compose.prod.yml ps
-      - name: Show 
-        run: |
-          docker compose
