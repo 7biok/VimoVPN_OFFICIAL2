@@ -609,6 +609,21 @@
 							</div>
 						</div>
 
+						<h3 class="h4">CaktusPay</h3>
+						<div class="mb-3 password-wrapper">
+							<label class="form-label" for="caktuspay_token">CaktusPay Token</label>
+							<div class="d-flex gap-2">
+								<input class="form-control" type="password" id="caktuspay_token" name="caktuspay_token" value="{{ settings.caktuspay_token or '' }}" />
+								<button type="button" class="btn btn-outline-secondary toggle-password">👁️</button>
+							</div>
+							<div class="form-text text-secondary">Минимальная сумма платежа у CaktusPay: 100 RUB.</div>
+						</div>
+						<div class="mb-3">
+							<label class="form-label" for="caktuspay_api_url">CaktusPay API URL</label>
+							<input class="form-control" type="url" id="caktuspay_api_url" name="caktuspay_api_url" value="{{ settings.caktuspay_api_url or '' }}" placeholder="https://lk.cactuspay.pro/api/?method=create" />
+							<div class="form-text text-secondary">Если оставить пустым, используется URL из документации. h2h-режим в Telegram-боте не используется, потому что API требует user_ip.</div>
+						</div>
+
 						<h3 class="h4">Настройка Heleket</h3>
 						<div class="mb-3">
 							<label class="form-label" for="heleket_merchant_id">Heleket Merchant ID</label>

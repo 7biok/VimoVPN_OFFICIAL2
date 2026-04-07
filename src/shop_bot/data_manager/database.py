@@ -251,6 +251,8 @@ def initialize_db():
                 "yookassa_secret_key": None,
                 "sbp_enabled": "false",
                 "cryptobot_token": None,
+                "caktuspay_token": None,
+                "caktuspay_api_url": None,
                 "heleket_merchant_id": None,
                 "heleket_api_key": None,
                 "domain": None,

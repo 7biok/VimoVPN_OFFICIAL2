@@ -96,6 +96,9 @@ class BotController:
             cryptobot_token = database.get_setting("cryptobot_token")
             cryptobot_enabled = bool(cryptobot_token)
 
+            caktuspay_token = database.get_setting("caktuspay_token")
+            caktuspay_enabled = bool(caktuspay_token)
+
             heleket_shop_id = database.get_setting("heleket_merchant_id")
             heleket_api_key = database.get_setting("heleket_api_key")
             heleket_enabled = bool(heleket_api_key and heleket_shop_id)
@@ -120,6 +123,7 @@ class BotController:
                 "yookassa": yookassa_enabled,
                 "heleket": heleket_enabled,
                 "cryptobot": cryptobot_enabled,
+                "caktuspay": caktuspay_enabled,
                 "tonconnect": tonconnect_enabled,
                 "stars": stars_enabled,
                 "yoomoney": yoomoney_enabled,

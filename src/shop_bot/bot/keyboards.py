@@ -669,6 +669,8 @@ def create_payment_method_keyboard(
         builder.button(text="💎 Криптовалюта", callback_data="pay_heleket")
     if payment_methods and payment_methods.get("cryptobot"):
         builder.button(text="🤖 CryptoBot", callback_data="pay_cryptobot")
+    if payment_methods and payment_methods.get("caktuspay") and (price is None or float(price) >= 100):
+        builder.button(text="🌵 CaktusPay", callback_data="pay_caktuspay")
     if payment_methods and payment_methods.get("yoomoney"):
         builder.button(text="💜 ЮMoney (кошелёк)", callback_data="pay_yoomoney")
     if payment_methods and payment_methods.get("stars"):
@@ -812,7 +814,7 @@ def create_payment_with_check_keyboard(payment_url: str, check_callback: str) ->
     builder.adjust(1)
     return builder.as_markup()
 
-def create_topup_payment_method_keyboard(payment_methods: dict) -> InlineKeyboardMarkup:
+def create_topup_payment_method_keyboard(payment_methods: dict, amount: float | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     # Только внешние способы оплаты, без оплаты с баланса
     if payment_methods and payment_methods.get("yookassa"):
@@ -824,6 +826,8 @@ def create_topup_payment_method_keyboard(payment_methods: dict) -> InlineKeyboar
         builder.button(text="💎 Криптовалюта", callback_data="topup_pay_heleket")
     if payment_methods and payment_methods.get("cryptobot"):
         builder.button(text="🤖 CryptoBot", callback_data="topup_pay_cryptobot")
+    if payment_methods and payment_methods.get("caktuspay") and (amount is None or float(amount) >= 100):
+        builder.button(text="🌵 CaktusPay", callback_data="topup_pay_caktuspay")
     if payment_methods and payment_methods.get("yoomoney"):
         builder.button(text="💜 ЮMoney (кошелёк)", callback_data="topup_pay_yoomoney")
     if payment_methods and payment_methods.get("stars"):

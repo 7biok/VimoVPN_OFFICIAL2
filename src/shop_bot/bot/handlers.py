@@ -195,6 +195,7 @@ def get_user_router() -> Router:
             "yookassa": bool((get_setting("yookassa_shop_id") or "").strip() and (get_setting("yookassa_secret_key") or "").strip()),
             "heleket": bool((get_setting("heleket_merchant_id") or "").strip() and (get_setting("heleket_api_key") or "").strip()),
             "cryptobot": bool((get_setting("cryptobot_token") or "").strip()),
+            "caktuspay": bool((get_setting("caktuspay_token") or "").strip()),
             "tonconnect": bool((get_setting("ton_wallet_address") or "").strip() and (get_setting("tonapi_key") or "").strip()),
             "stars": _setting_enabled("stars_enabled"),
             "yoomoney": _setting_enabled("yoomoney_enabled") and bool((get_setting("yoomoney_wallet") or "").strip()),
@@ -533,7 +534,7 @@ def get_user_router() -> Router:
         payment_methods = _get_runtime_payment_methods()
         await message.answer(
             f"К пополнению: {final_amount:.2f} RUB\nВыберите способ оплаты:",
-            reply_markup=keyboards.create_topup_payment_method_keyboard(payment_methods)
+            reply_markup=keyboards.create_topup_payment_method_keyboard(payment_methods, float(final_amount))
         )
         await state.set_state(TopUpProcess.waiting_for_topup_method)
 
@@ -715,6 +716,48 @@ def get_user_router() -> Router:
             await callback.message.edit_text("❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты.")
             await state.clear()
             return
+
+    @user_router.callback_query(TopUpProcess.waiting_for_topup_method, F.data == "topup_pay_caktuspay")
+    async def topup_pay_caktuspay(callback: types.CallbackQuery, state: FSMContext):
+        await callback.answer("Создаю счёт CaktusPay...")
+        data = await state.get_data()
+        amount = Decimal(str(data.get('topup_amount', 0))).quantize(Decimal("0.01"))
+        if amount <= 0:
+            await callback.message.edit_text("❌ Некорректная сумма пополнения. Повторите ввод.")
+            await state.clear()
+            return
+        if amount < Decimal("100"):
+            await callback.message.edit_text("❌ CaktusPay принимает платежи от 100 RUB. Выберите другой способ оплаты или увеличьте сумму.")
+            await state.clear()
+            return
+
+        state_data = {
+            "action": "top_up",
+            "customer_email": None,
+            "plan_id": None,
+            "host_name": None,
+            "key_id": None,
+        }
+        result = await _create_caktuspay_payment_request(
+            user_id=callback.from_user.id,
+            price=float(amount),
+            months=0,
+            host_name="",
+            state_data=state_data,
+        )
+        if not result:
+            await callback.message.edit_text("❌ Не удалось создать счёт CaktusPay. Проверьте токен и попробуйте позже.")
+            await state.clear()
+            return
+
+        pay_url, payment_id = result
+        await callback.message.edit_text(
+            "Нажмите на кнопку ниже для оплаты.\n\n"
+            f"ID платежа: <code>{payment_id}</code>\n"
+            "Если после оплаты баланс не зачислится автоматически, передайте этот ID в поддержку.",
+            reply_markup=keyboards.create_payment_keyboard(pay_url)
+        )
+        await state.clear()
 
     @user_router.callback_query(TopUpProcess.waiting_for_topup_method, (F.data == "topup_pay_cryptobot") | (F.data == "topup_pay_heleket"))
     async def topup_pay_heleket_like(callback: types.CallbackQuery, state: FSMContext):
@@ -2341,6 +2384,56 @@ def get_user_router() -> Router:
             await callback.message.edit_text("❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты.")
             await state.clear()
 
+    @user_router.callback_query(PaymentProcess.waiting_for_payment_method, F.data == "pay_caktuspay")
+    async def create_caktuspay_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
+        await callback.answer("Создаю счёт CaktusPay...")
+        data = await state.get_data()
+        user_data = get_user(callback.from_user.id)
+        plan = get_plan_by_id(data.get('plan_id'))
+        if not plan:
+            await callback.message.edit_text("❌ Произошла ошибка при выборе тарифа.")
+            await state.clear()
+            return
+
+        base_price = Decimal(str(plan['price']))
+        price_rub = base_price
+        if user_data and user_data.get('referred_by') and user_data.get('total_spent', 0) == 0:
+            try:
+                discount_percentage = Decimal(get_setting("referral_discount") or "0")
+            except Exception:
+                discount_percentage = Decimal("0")
+            if discount_percentage > 0:
+                discount_amount = (base_price * discount_percentage / 100).quantize(Decimal("0.01"))
+                price_rub = base_price - discount_amount
+
+        months = int(plan['months'])
+        final_price_decimal = _resolve_final_price(price_rub.quantize(Decimal("0.01")), data)
+        if final_price_decimal < Decimal("100"):
+            await callback.message.edit_text("❌ CaktusPay принимает платежи от 100 RUB. Выберите другой способ оплаты.")
+            await state.clear()
+            return
+
+        result = await _create_caktuspay_payment_request(
+            user_id=callback.from_user.id,
+            price=float(final_price_decimal),
+            months=months,
+            host_name=data.get('host_name'),
+            state_data=data,
+        )
+        if not result:
+            await callback.message.edit_text("❌ Не удалось создать счёт CaktusPay. Проверьте настройки и попробуйте позже.")
+            await state.clear()
+            return
+
+        pay_url, payment_id = result
+        await callback.message.edit_text(
+            "Нажмите на кнопку ниже для оплаты.\n\n"
+            f"ID платежа: <code>{payment_id}</code>\n"
+            "Если после оплаты ключ не выдастся автоматически, передайте этот ID в поддержку.",
+            reply_markup=keyboards.create_payment_keyboard(pay_url)
+        )
+        await state.clear()
+
     @user_router.callback_query(PaymentProcess.waiting_for_payment_method, (F.data == "pay_cryptobot") | (F.data == "pay_heleket"))
     async def create_crypto_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Создаю счет в Crypto Pay...")
@@ -2840,6 +2933,99 @@ async def _create_heleket_payment_request(
         logger.error(f"Heleket: общая ошибка при создании счёта: {e}", exc_info=True)
         return None
 
+async def _create_caktuspay_payment_request(
+    user_id: int,
+    price: float,
+    months: int,
+    host_name: str,
+    state_data: dict,
+) -> Optional[tuple[str, str]]:
+    """Создать redirect-платёж через CaktusPay и вернуть ссылку и order_id.
+
+    Из текущей документации используется только create API.
+    h2h-режим для Telegram-бота не применяем: CaktusPay требует user_ip.
+    """
+    try:
+        token = (get_setting("caktuspay_token") or "").strip()
+        if not token:
+            logger.error("CaktusPay: не задан caktuspay_token")
+            return None
+
+        amount = Decimal(str(price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if amount < Decimal("100"):
+            logger.warning(f"CaktusPay: сумма {amount} меньше минимальной 100 RUB")
+            return None
+
+        payment_id = str(uuid.uuid4())
+        description = (
+            f"Пополнение баланса на {float(amount):.2f} RUB"
+            if state_data.get("action") == "top_up"
+            else f"Оплата тарифа на {int(months)} мес."
+        )
+        redirect_url = f"https://t.me/{TELEGRAM_BOT_USERNAME}" if TELEGRAM_BOT_USERNAME else None
+        endpoint = (get_setting("caktuspay_api_url") or "https://lk.cactuspay.pro/api/?method=create").strip()
+
+        payload = {
+            "token": token,
+            "amount": float(amount),
+            "order_id": payment_id,
+            "description": description,
+        }
+        if redirect_url:
+            payload["redirect_url"] = redirect_url
+
+        metadata = {
+            "payment_id": payment_id,
+            "user_id": user_id,
+            "months": int(months or 0),
+            "price": float(amount),
+            "action": state_data.get("action"),
+            "key_id": state_data.get("key_id"),
+            "host_name": host_name,
+            "plan_id": state_data.get("plan_id"),
+            "customer_email": state_data.get("customer_email"),
+            "payment_method": "CaktusPay",
+            "promo_code": state_data.get("promo_code"),
+            "promo_discount_percent": state_data.get("promo_discount_percent"),
+            "promo_discount_amount": state_data.get("promo_discount_amount"),
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, json=payload, timeout=15) as resp:
+                text = await resp.text()
+                if resp.status not in (200, 201):
+                    logger.error(f"CaktusPay: HTTP {resp.status} при создании счёта: {text}")
+                    return None
+                try:
+                    data = await resp.json()
+                except Exception:
+                    logger.error(f"CaktusPay: не удалось распарсить JSON-ответ: {text}")
+                    return None
+
+        if str(data.get("status") or "").lower() != "success":
+            logger.error(f"CaktusPay: API вернул ошибку: {data}")
+            return None
+
+        response_data = data.get("response") or {}
+        requisite = response_data.get("requisite") or {}
+        pay_url = (
+            response_data.get("url")
+            or requisite.get("paymentLink")
+            or requisite.get("receiverQR")
+        )
+        if not pay_url:
+            logger.error(f"CaktusPay: в ответе нет url для оплаты: {data}")
+            return None
+
+        if not create_pending_transaction(payment_id, user_id, float(amount), metadata):
+            logger.error(f"CaktusPay: не удалось сохранить pending-транзакцию {payment_id}")
+            return None
+
+        return (str(pay_url), payment_id)
+    except Exception as e:
+        logger.error(f"CaktusPay: ошибка при создании счёта: {e}", exc_info=True)
+        return None
+
 async def _create_cryptobot_invoice(
     payment_id: str,
     price_rub: float,
@@ -3111,6 +3297,7 @@ async def notify_admin_of_purchase(bot: Bot, metadata: dict):
             'Balance': 'Баланс',
             'Card': 'Карта',
             'Crypto': 'Крипто',
+            'CaktusPay': 'CaktusPay',
             'USDT': 'USDT',
             'TON': 'TON',
         }
