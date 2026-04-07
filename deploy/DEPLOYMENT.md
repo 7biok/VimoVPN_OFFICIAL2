@@ -1,41 +1,50 @@
 # GitHub Deploy для `vimovpn.icu`
 
-Этот репозиторий настроен на автоматический деплой через GitHub Actions runner `ubuntu-latest` с выкладкой по SSH на сервер `2.26.108.92`.
+Этот репозиторий теперь рассчитан на деплой через `self-hosted` GitHub runner, который установлен прямо на прод-сервере `2.26.108.92`.
 
-## Что делает workflow
+## Как это работает
 
-- Запускается при push в `main` или вручную через `workflow_dispatch`.
-- Синхронизирует код в `/srv/vimovpn/app`.
-- Не удаляет рабочие данные: `users.db`, `backups/`, `.env`.
-- На сервере автоматически ставит `docker`, `nginx`, `certbot`, если их еще нет.
-- Выпускает или переиспользует SSL для `vimovpn.icu`.
-- Пересобирает и перезапускает контейнеры через Docker Compose.
+- Workflow запускается на runner с label `vimovpn-prod`.
+- Runner делает `actions/checkout` локально на сервере.
+- Затем выполняет `docker compose -f docker-compose.prod.yml up -d --build`.
+- Сервис поднимается через контейнеры `app` и `caddy`.
+- TLS для `vimovpn.icu` получает и обновляет сам `Caddy`, без отдельного bash-деплой-скрипта.
+
+## Что нужно на сервере один раз
+
+1. Установить Docker и Docker Compose plugin.
+2. Установить GitHub self-hosted runner именно для этого репозитория.
+3. Дать runner'у label `vimovpn-prod`.
+4. Добавить пользователя runner в группу `docker`.
+5. Разрешить этому пользователю `sudo mkdir/chown` для каталога `/srv/vimovpn` либо подготовить каталоги заранее.
+6. Убедиться, что `vimovpn.icu` уже смотрит на `2.26.108.92`, а порты `80` и `443` открыты.
+
+Пошаговая памятка для runner: `deploy/RUNNER_SETUP.md`.
 
 ## Нужные GitHub Secrets
 
 Добавьте в `Settings -> Secrets and variables -> Actions`:
 
-- `DEPLOY_USER`: пользователь SSH на сервере. Обычно `root`.
-- `DEPLOY_SSH_KEY`: приватный SSH-ключ для входа на сервер.
-- `LETSENCRYPT_EMAIL`: email для выпуска первого SSL-сертификата.
-- `SHOPBOT_SECRET_KEY`: необязательный секрет для Flask-сессий. Если не задан, сервер сгенерирует его сам и сохранит в `/srv/vimovpn/app/.env`.
+- `LETSENCRYPT_EMAIL`
+- `SHOPBOT_SECRET_KEY`
 
-## Важные условия
+## Прод-каталоги на сервере
 
-- Домен `vimovpn.icu` должен смотреть на `2.26.108.92`.
-- Если `DEPLOY_USER` не `root`, у него должен быть `passwordless sudo` для `apt`, `systemctl`, `nginx`, `certbot`, `docker`.
-- Порт `22` должен быть доступен для GitHub Actions runner'ов.
+- Данные приложения: `/srv/vimovpn/data`
+- Бэкапы: `/srv/vimovpn/data/backups`
+- Caddy data: `/srv/vimovpn/caddy/data`
+- Caddy config: `/srv/vimovpn/caddy/config`
 
-## Первый запуск
+## Что хранится вне checkout
 
-1. Добавьте secrets.
-2. Убедитесь, что сервер принимает SSH по ключу.
-3. Запустите `Actions -> Deploy Production -> Run workflow` или сделайте push в `main`.
-4. После завершения панель будет доступна по `https://vimovpn.icu/login`.
+Это важно, потому что `actions/checkout` чистит рабочую директорию runner'а:
 
-## Где хранится прод
+- `users.db` живет в `/srv/vimovpn/data/users.db`
+- папка `backups` живет в `/srv/vimovpn/data/backups`
+- TLS-данные Caddy живут в `/srv/vimovpn/caddy`
 
-- Код: `/srv/vimovpn/app`
-- База: `/srv/vimovpn/app/users.db`
-- Бэкапы: `/srv/vimovpn/app/backups`
-- Nginx config: `/etc/nginx/sites-available/vimovpn.conf`
+## Запуск
+
+1. Настройте runner и secrets.
+2. Запустите `Actions -> Deploy Production -> Run workflow` или отправьте commit в `main`.
+3. После успешного деплоя панель будет доступна по `https://vimovpn.icu/login`.

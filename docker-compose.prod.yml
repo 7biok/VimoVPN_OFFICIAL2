@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: vimovpn-app
+    restart: unless-stopped
+    environment:
+      SHOPBOT_SECRET_KEY: ${SHOPBOT_SECRET_KEY:?SHOPBOT_SECRET_KEY is required}
+      SHOPBOT_PROJECT_ROOT: ${SHOPBOT_PROJECT_ROOT:-/app/data}
+    volumes:
+      - ${HOST_DATA_DIR:-/srv/vimovpn/data}:${SHOPBOT_PROJECT_ROOT:-/app/data}
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: vimovpn-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${HOST_CADDY_DATA_DIR:-/srv/vimovpn/caddy/data}:/data
+      - ${HOST_CADDY_CONFIG_DIR:-/srv/vimovpn/caddy/config}:/config

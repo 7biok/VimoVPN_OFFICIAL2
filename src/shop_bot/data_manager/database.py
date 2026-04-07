@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 import logging
@@ -7,8 +8,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path("/app/project")
-DB_FILE = PROJECT_ROOT / "users.db"
+PROJECT_ROOT = Path(os.getenv("SHOPBOT_PROJECT_ROOT", "/app/project")).resolve()
+DB_FILE = Path(os.getenv("SHOPBOT_DB_FILE", str(PROJECT_ROOT / "users.db"))).resolve()
 
 def normalize_host_name(name: str | None) -> str:
     """Normalize host name by trimming and removing invisible/unicode spaces.

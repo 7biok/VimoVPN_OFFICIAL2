@@ -15,71 +15,52 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - vimovpn-prod
     timeout-minutes: 30
     env:
-      DEPLOY_HOST: 2.26.108.92
-      DEPLOY_PORT: 22
-      DEPLOY_DOMAIN: vimovpn.icu
-      APP_DIR: /srv/vimovpn/app
-      APP_NAME: vimovpn
-      APP_PORT: 1488
+      APP_DOMAIN: vimovpn.icu
+      SHOPBOT_PROJECT_ROOT: /app/data
+      HOST_DATA_DIR: /srv/vimovpn/data
+      HOST_CADDY_DATA_DIR: /srv/vimovpn/caddy/data
+      HOST_CADDY_CONFIG_DIR: /srv/vimovpn/caddy/config
+      LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+      SHOPBOT_SECRET_KEY: ${{ secrets.SHOPBOT_SECRET_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate required secrets
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Validate runner and secrets
         run: |
-          test -n "$DEPLOY_USER" || { echo "DEPLOY_USER secret is required"; exit 1; }
-          test -n "$DEPLOY_SSH_KEY" || { echo "DEPLOY_SSH_KEY secret is required"; exit 1; }
+          test -n "$LETSENCRYPT_EMAIL" || { echo "LETSENCRYPT_EMAIL secret is required"; exit 1; }
+          test -n "$SHOPBOT_SECRET_KEY" || { echo "SHOPBOT_SECRET_KEY secret is required"; exit 1; }
+          docker version
+          docker compose version
 
-      - name: Configure SSH access
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Prepare persistent directories
         run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          sudo mkdir -p \
+            "$HOST_DATA_DIR/backups" \
+            "$HOST_CADDY_DATA_DIR" \
+            "$HOST_CADDY_CONFIG_DIR"
+          sudo chown -R "$USER:$USER" \
+            "$HOST_DATA_DIR" \
+            "$HOST_CADDY_DATA_DIR" \
+            "$HOST_CADDY_CONFIG_DIR"
 
-      - name: Ensure target directory exists
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      - name: Show deploy target
         run: |
-          ssh -i ~/.ssh/id_ed25519 -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR'"
+          echo "Deploying to self-hosted runner on $(hostname)"
+          echo "Domain: $APP_DOMAIN"
+          echo "Runtime data: $HOST_DATA_DIR"
 
-      - name: Sync project to server
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      - name: Deploy stack
         run: |
-          rsync -az --delete \
-            --exclude-from=deploy/rsync-excludes.txt \
-            -e "ssh -i ~/.ssh/id_ed25519 -p $DEPLOY_PORT" \
-            ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
+          docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 
-      - name: Run remote deployment
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
-          SHOPBOT_SECRET_KEY: ${{ secrets.SHOPBOT_SECRET_KEY }}
+      - name: Show running services
         run: |
-          remote_env=(
-            "APP_DIR=$(printf '%q' "$APP_DIR")"
-            "APP_NAME=$(printf '%q' "$APP_NAME")"
-            "APP_PORT=$(printf '%q' "$APP_PORT")"
-            "DEPLOY_DOMAIN=$(printf '%q' "$DEPLOY_DOMAIN")"
-          )
-
-          if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
-            remote_env+=("LETSENCRYPT_EMAIL=$(printf '%q' "$LETSENCRYPT_EMAIL")")
-          fi
-
-          if [ -n "${SHOPBOT_SECRET_KEY:-}" ]; then
-            remote_env+=("SHOPBOT_SECRET_KEY=$(printf '%q' "$SHOPBOT_SECRET_KEY")")
-          fi
-
-          ssh -i ~/.ssh/id_ed25519 -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "$(printf '%s ' "${remote_env[@]}")bash $(printf '%q' "$APP_DIR/deploy/server-deploy.sh")"
+          docker compose -f docker-compose.prod.yml ps

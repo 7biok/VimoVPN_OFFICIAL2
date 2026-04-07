@@ -325,7 +325,7 @@
 						<div class="mb-3">
                             <label class="form-label" for="backup_interval_days">Автобэкап базы (каждые N дней)</label>
                             <input class="form-control pill-md" type="number" min="0" step="1" id="backup_interval_days" name="backup_interval_days" value="{{ settings.backup_interval_days or '1' }}" placeholder="1" />
-                            <div class="form-text">0 — отключить автобэкап. При включении архив БД будет отправляться администраторам и сохраняться в /app/project/backups.</div>
+                            <div class="form-text">0 — отключить автобэкап. При включении архив БД будет отправляться администраторам и сохраняться в каталоге backups сервиса.</div>
                         </div>
 
                         <div class="mb-3">
@@ -384,7 +384,7 @@
                                 </button>
                               </div>
                               <input class="d-none" type="file" id="db_file" name="db_file" accept=".zip,.db" />
-                              <div class="form-text text-secondary">Перед восстановлением текущая база автоматически сохраняется в /app/project/backups.</div>
+                              <div class="form-text text-secondary">Перед восстановлением текущая база автоматически сохраняется в каталоге backups сервиса.</div>
                             </div>
                           </div>
                         </div>

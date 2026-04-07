@@ -1,3 +1,4 @@
+import os
 import logging
 import shutil
 import sqlite3
@@ -13,7 +14,9 @@ from . import database
 logger = logging.getLogger(__name__)
 
 # Папка для хранения локальных архивов бэкапов
-BACKUPS_DIR = Path("/app/project/backups")
+BACKUPS_DIR = Path(
+    os.getenv("SHOPBOT_BACKUPS_DIR", str(database.PROJECT_ROOT / "backups"))
+).resolve()
 BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Имя файла БД см. в database.DB_FILE
