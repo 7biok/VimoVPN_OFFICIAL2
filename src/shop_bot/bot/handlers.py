@@ -10,7 +10,7 @@ import base64
 import asyncio
 import hashlib
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from hmac import compare_digest
 from functools import wraps
 from yookassa import Payment
@@ -51,6 +51,7 @@ from shop_bot.data_manager.database import (
     is_admin,
     set_referral_start_bonus_received,
     find_and_complete_pending_transaction,
+    get_transaction_status,
     check_promo_code_available,
     redeem_promo_code,
     update_promo_code_status,
@@ -754,8 +755,8 @@ def get_user_router() -> Router:
         await callback.message.edit_text(
             "Нажмите на кнопку ниже для оплаты.\n\n"
             f"ID платежа: <code>{payment_id}</code>\n"
-            "Если после оплаты баланс не зачислится автоматически, передайте этот ID в поддержку.",
-            reply_markup=keyboards.create_payment_keyboard(pay_url)
+            "После оплаты нажмите «Проверить оплату». Если баланс не зачислится автоматически, передайте этот ID в поддержку.",
+            reply_markup=keyboards.create_payment_with_check_keyboard(pay_url, f"check_caktuspay_{payment_id}")
         )
         await state.clear()
 
@@ -2429,10 +2430,46 @@ def get_user_router() -> Router:
         await callback.message.edit_text(
             "Нажмите на кнопку ниже для оплаты.\n\n"
             f"ID платежа: <code>{payment_id}</code>\n"
-            "Если после оплаты ключ не выдастся автоматически, передайте этот ID в поддержку.",
-            reply_markup=keyboards.create_payment_keyboard(pay_url)
+            "После оплаты нажмите «Проверить оплату». Если ключ не выдастся автоматически, передайте этот ID в поддержку.",
+            reply_markup=keyboards.create_payment_with_check_keyboard(pay_url, f"check_caktuspay_{payment_id}")
         )
         await state.clear()
+
+    @user_router.callback_query(F.data.startswith("check_caktuspay_"))
+    async def check_caktuspay_status(callback: types.CallbackQuery, bot: Bot):
+        await callback.answer("Проверяю оплату...")
+        order_id = callback.data[len("check_caktuspay_"):]
+        if not order_id:
+            await callback.answer("❌ Некорректные данные для проверки.", show_alert=True)
+            return
+
+        payment_info = await get_caktuspay_payment_info(order_id)
+        if not payment_info:
+            await callback.answer("❌ Не удалось получить статус платежа. Попробуйте позже.", show_alert=True)
+            return
+
+        payment_status = str(payment_info.get("status") or "").upper()
+        if payment_status != "ACCEPT":
+            if payment_status == "WAIT":
+                await callback.answer("⏳ Платёж ещё не подтверждён. Завершите оплату и попробуйте снова.", show_alert=True)
+            else:
+                await callback.answer(f"❌ Статус платежа: {payment_status or 'UNKNOWN'}", show_alert=True)
+            return
+
+        metadata, finalize_status = finalize_caktuspay_payment(order_id, payment_info)
+        if metadata:
+            await process_successful_payment(bot, metadata)
+            try:
+                await callback.message.edit_text("✅ Платёж подтверждён и обработан.")
+            except Exception:
+                pass
+            return
+
+        if finalize_status == "already_paid":
+            await callback.answer("✅ Платёж уже был обработан.", show_alert=True)
+            return
+
+        await callback.answer("❌ Не удалось завершить транзакцию. Если средства списаны, передайте ID платежа в поддержку.", show_alert=True)
 
     @user_router.callback_query(PaymentProcess.waiting_for_payment_method, (F.data == "pay_cryptobot") | (F.data == "pay_heleket"))
     async def create_crypto_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
@@ -2933,6 +2970,94 @@ async def _create_heleket_payment_request(
         logger.error(f"Heleket: общая ошибка при создании счёта: {e}", exc_info=True)
         return None
 
+def _build_caktuspay_api_url(method_name: str) -> str:
+    raw_url = (get_setting("caktuspay_api_url") or "https://lk.cactuspay.pro/api/?method=create").strip()
+    try:
+        parsed = urlparse(raw_url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["method"] = method_name
+        return urlunparse(parsed._replace(query=urlencode(query)))
+    except Exception:
+        if "method=" in raw_url:
+            return re.sub(r"method=[^&]*", f"method={method_name}", raw_url, count=1)
+        separator = "&" if "?" in raw_url else "?"
+        return f"{raw_url}{separator}method={method_name}"
+
+async def _request_caktuspay_api(method_name: str, payload: dict) -> Optional[dict]:
+    endpoint = _build_caktuspay_api_url(method_name)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, json=payload, timeout=15) as resp:
+                text = await resp.text()
+                if resp.status not in (200, 201):
+                    logger.error(f"CaktusPay: HTTP {resp.status} for method={method_name}: {text}")
+                    return None
+                try:
+                    return await resp.json()
+                except Exception:
+                    logger.error(f"CaktusPay: invalid JSON for method={method_name}: {text}")
+                    return None
+    except Exception as e:
+        logger.error(f"CaktusPay: HTTP error for method={method_name}: {e}", exc_info=True)
+        return None
+
+async def get_caktuspay_payment_info(order_id: str) -> Optional[dict]:
+    token = (get_setting("caktuspay_token") or "").strip()
+    if not token or not order_id:
+        logger.warning("CaktusPay: get payment info called without token or order_id")
+        return None
+
+    data = await _request_caktuspay_api(
+        "get",
+        {
+            "token": token,
+            "order_id": order_id,
+        },
+    )
+    if not data:
+        return None
+    if str(data.get("status") or "").lower() != "success":
+        logger.warning(f"CaktusPay: get payment info returned error for {order_id}: {data}")
+        return None
+    response_data = data.get("response")
+    if not isinstance(response_data, dict):
+        logger.warning(f"CaktusPay: unexpected get payment info response for {order_id}: {data}")
+        return None
+    return response_data
+
+def finalize_caktuspay_payment(order_id: str, payment_info: dict) -> tuple[Optional[dict], str]:
+    status = str(payment_info.get("status") or "").upper()
+    if status != "ACCEPT":
+        return None, status or "UNKNOWN"
+
+    amount_rub = None
+    for field_name in ("total_amount", "amount"):
+        raw_value = payment_info.get(field_name)
+        if raw_value in (None, ""):
+            continue
+        try:
+            amount_rub = float(Decimal(str(raw_value)))
+            break
+        except Exception:
+            continue
+
+    metadata = find_and_complete_pending_transaction(
+        payment_id=order_id,
+        amount_rub=amount_rub,
+        payment_method="CaktusPay",
+        currency_name="RUB",
+        amount_currency=None,
+    )
+    if metadata:
+        return metadata, "processed"
+
+    current_status = get_transaction_status(order_id)
+    if current_status == "paid":
+        return None, "already_paid"
+    if current_status == "pending":
+        return None, "pending_not_completed"
+    return None, "missing"
+
 async def _create_caktuspay_payment_request(
     user_id: int,
     price: float,
@@ -2963,7 +3088,7 @@ async def _create_caktuspay_payment_request(
             else f"Оплата тарифа на {int(months)} мес."
         )
         redirect_url = f"https://t.me/{TELEGRAM_BOT_USERNAME}" if TELEGRAM_BOT_USERNAME else None
-        endpoint = (get_setting("caktuspay_api_url") or "https://lk.cactuspay.pro/api/?method=create").strip()
+        endpoint = _build_caktuspay_api_url("create")
 
         payload = {
             "token": token,

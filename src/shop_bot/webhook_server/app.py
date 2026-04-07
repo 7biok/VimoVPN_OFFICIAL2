@@ -1786,6 +1786,59 @@ def create_webhook_app(bot_controller_instance):
             return 'Error', 500
         
     @csrf.exempt
+    @flask_app.route('/caktuspay-webhook', methods=['POST'])
+    def caktuspay_webhook_handler():
+        try:
+            form_data = request.form.to_dict(flat=True)
+            logger.info(f"CaktusPay webhook data: {form_data}")
+
+            order_id = str(form_data.get('order_id') or '').strip()
+            incoming_status = str(form_data.get('status') or '').upper()
+            if not order_id:
+                logger.warning("CaktusPay webhook: missing order_id")
+                return 'Bad Request', 400
+
+            if incoming_status and incoming_status != "ACCEPT":
+                logger.info(f"CaktusPay webhook: ignoring status {incoming_status} for {order_id}")
+                return 'OK', 200
+
+            payment_info = asyncio.run(handlers.get_caktuspay_payment_info(order_id))
+            if not payment_info:
+                logger.warning(f"CaktusPay webhook: failed to verify payment {order_id}")
+                return 'OK', 200
+
+            verified_status = str(payment_info.get('status') or '').upper()
+            if verified_status != "ACCEPT":
+                logger.info(f"CaktusPay webhook: verified status for {order_id} is {verified_status}")
+                return 'OK', 200
+
+            bot = _bot_controller.get_bot_instance()
+            loop = current_app.config.get('EVENT_LOOP')
+            payment_processor = handlers.process_successful_payment
+            if not (bot and loop and loop.is_running() and payment_processor):
+                logger.error("CaktusPay webhook: bot or event loop is not available")
+                return 'Error', 500
+
+            metadata, finalize_status = handlers.finalize_caktuspay_payment(order_id, payment_info)
+            if metadata:
+                asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
+                return 'OK', 200
+
+            if finalize_status == "already_paid":
+                logger.info(f"CaktusPay webhook: payment {order_id} already processed")
+                return 'OK', 200
+
+            if finalize_status == "missing":
+                logger.warning(f"CaktusPay webhook: pending transaction not found for {order_id}")
+                return 'OK', 200
+
+            logger.error(f"CaktusPay webhook: could not finalize payment {order_id}, status={finalize_status}")
+            return 'Error', 500
+        except Exception as e:
+            logger.error(f"CaktusPay webhook error: {e}", exc_info=True)
+            return 'Error', 500
+
+    @csrf.exempt
     @flask_app.route('/heleket-webhook', methods=['POST'])
     def heleket_webhook_handler():
         try:

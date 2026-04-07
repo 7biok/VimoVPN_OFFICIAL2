@@ -1375,6 +1375,17 @@ def find_and_complete_pending_transaction(
         logging.error(f"Не удалось завершить ожидающую транзакцию {payment_id}: {e}")
         return None
 
+def get_transaction_status(payment_id: str) -> str | None:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status FROM transactions WHERE payment_id = ? LIMIT 1", (payment_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить статус транзакции {payment_id}: {e}")
+        return None
+
 def insert_host_speedtest(
     host_name: str,
     method: str,

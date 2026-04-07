@@ -621,6 +621,8 @@
 						<div class="mb-3">
 							<label class="form-label" for="caktuspay_api_url">CaktusPay API URL</label>
 							<input class="form-control" type="url" id="caktuspay_api_url" name="caktuspay_api_url" value="{{ settings.caktuspay_api_url or '' }}" placeholder="https://lk.cactuspay.pro/api/?method=create" />
+							<div class="form-text text-secondary">Webhook URL для кабинета CaktusPay: <code>{{ (settings.domain or request.url_root) | trim('/') }}/caktuspay-webhook</code></div>
+							<div class="form-text text-secondary">После получения webhook сервис дополнительно перепроверяет платёж через API `method=get` и только потом подтверждает заказ.</div>
 							<div class="form-text text-secondary">Если оставить пустым, используется URL из документации. h2h-режим в Telegram-боте не используется, потому что API требует user_ip.</div>
 						</div>
 

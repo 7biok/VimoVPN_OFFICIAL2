@@ -215,3 +215,206 @@ response.requisite	OBJECT	Результат запроса реквизитов
 "until_timestamp": 
 1775473200
 }
+Информация по платежу
+Проверка статуса и данных платежа по `order_id`.
+
+Запрос
+POST
+https://lk.cactuspay.pro/api/?method=get
+Формат body: application/json
+Параметры body
+Имя	Тип	Описание
+tokenОбязательное	STRING	Ключ вашего магазина, держите его в секрете
+order_idОбязательное	STRING	Уникальный номер платежа в вашей системе
+Структура ответа
+Имя	Тип	Описание
+id	NUMBER	Уникальный номер платежа в системе CactusPay
+order_id	STRING	Уникальный номер платежа в вашей системе
+amount	STRING	Сумма платежа
+total_amount	STRING	Итоговая сумма платежа с учётом фактических данных по платёжной операции
+status	STRING	Статус платежа: `ACCEPT`, `WAIT`
+profit	STRING	Сумма прибыли по платежу. Если данных нет, возвращается `0`
+Пример успешного ответа:
+
+{
+  
+"status": 
+"success",
+  
+"response": 
+{
+  
+  
+"id": 
+12345,
+  
+  
+"order_id": 
+"ORDER_1001",
+  
+  
+"amount": 
+"1500",
+  
+  
+"total_amount": 
+"1500",
+  
+  
+"status": 
+"WAIT",
+  
+  
+"profit": 
+"0"
+  
+}
+}
+Возможные ошибки:
+
+{
+  
+"status": 
+"error",
+  
+"response": 
+"Такого платежа не существует"
+}
+Webhook
+События, которые CactusPay отправляет на ваш сервер после изменения статуса платежа.
+
+Webhook используется для автоматической синхронизации статусов между CactusPay и вашей системой.
+
+После успешной оплаты CactusPay отправляет `POST`-запрос на URL, который вы указали в настройках магазина.
+
+Формат запроса
+POST
+URL webhook вашего магазина
+Формат body: application/x-www-form-urlencoded
+Поля webhook
+Имя	Тип	Описание
+id	NUMBER / STRING	Внутренний ID платежа в CactusPay
+order_id	STRING	Номер платежа в вашей системе
+amount	STRING / NUMBER	Сумма платежа
+total_amount	STRING / NUMBER	Итоговая сумма платежа
+status	STRING	Текущий статус платежа. В автоматическом webhook сейчас отправляется `ACCEPT`
+type	STRING	Тип платежа
+email_required	STRING / NUMBER	Признак обязательного email-поля
+profit	STRING	Сумма прибыли
+profit_rub	STRING / NUMBER	Сумма прибыли в рублях
+rate	STRING / NUMBER	Курс конвертации
+payment_type	STRING / NUMBER	Тип платёжной операции
+description	STRING	Описание платежа
+Пример payload:
+
+{
+  
+"id": 
+12345,
+  
+"order_id": 
+"ORDER_1001",
+  
+"amount": 
+"1500",
+  
+"total_amount": 
+1500,
+  
+"status": 
+"ACCEPT",
+  
+"type": 
+"ONE-TIME",
+  
+"email_required": 
+0,
+  
+"profit": 
+"0.0000",
+  
+"profit_rub": 
+0,
+  
+"rate": 
+96.42,
+  
+"payment_type": 
+0,
+  
+"description": 
+"Оплата заказа"
+}
+Что важно проверить
+Ваш endpoint должен принимать `POST`-запросы.
+Формат данных: `application/x-www-form-urlencoded`.
+Обрабатывайте повторные уведомления идемпотентно, используя `order_id`.
+После получения webhook обязательно дополнительно запросите `Информация по платежу`, чтобы повторно проверить актуальный статус платежа.
+После получения статуса `ACCEPT` переводите заказ в оплаченный статус.
+Не полагайтесь только на входящий webhook при изменении статуса заказа.
+Если endpoint временно недоступен, добавьте логи и ручную проверку через метод получения информации по платежу.
+Экспорт платежей
+Выгрузка платежей и агрегированной статистики за период.
+
+Запрос
+POST
+https://lk.cactuspay.pro/client/shop/export
+Формат body: application/json
+Параметры body
+Имя	Тип	Описание
+tokenОбязательное	STRING	Ключ вашего магазина, держите его в секрете
+dateFromОбязательное	NUMBER / STRING	Дата начала в UNIX или ISO 8601
+dateToОбязательное	NUMBER / STRING	Дата окончания в UNIX или ISO 8601
+Пример ответа:
+
+{
+  
+"status": 
+"success",
+  
+"response": 
+{
+  
+  
+"payments": 
+[...], // 0 items
+  
+  
+"statistics": 
+{...} // 3 items
+  
+}
+}
+Формат элемента в `payments`
+{
+  
+"id": 
+0,
+  
+"type": 
+"ONE-TIME",
+  
+"orderId": 
+"***",
+  
+"amount": 
+0,
+  
+"profit": 
+0,
+  
+"formattedDate": 
+"15.05.2025 15:57:34",
+  
+"timestampDate": 
+1747313854,
+  
+"requisites": 
+"***",
+  
+"rate": 
+94.304,
+  
+"status": 
+"WAIT"
+}
