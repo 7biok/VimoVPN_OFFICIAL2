@@ -3,14 +3,18 @@ import logging
 import asyncio
 import json
 import hashlib
+import aiohttp
 import html as html_escape
 import base64
 import time
 import uuid
 from hmac import compare_digest
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 from math import ceil
+from aiosend import CryptoPay
+from yookassa import Payment
 from flask import Flask, request, render_template, redirect, url_for, flash, session, current_app, jsonify, send_file
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 import secrets
@@ -41,7 +45,10 @@ from shop_bot.data_manager.database import (
     update_host_url, update_host_hiddify_settings, update_host_name, update_host_ssh_settings, get_latest_speedtest, get_speedtests,
     get_all_keys, get_keys_for_user, get_key_by_id, delete_key_by_id, update_key_comment, update_key_info,
     add_new_key, get_balance, adjust_user_balance, get_referrals_for_user,
-    get_user, get_key_by_email, get_host, find_and_complete_pending_transaction)
+    get_user, get_key_by_email, get_host, find_and_complete_pending_transaction,
+    create_instant_access_order, set_instant_access_payment_context,
+    mark_instant_access_paid, mark_instant_access_ready, mark_instant_access_failed,
+    get_instant_access_order_by_payment_id)
 
 
 _bot_controller = None
@@ -65,7 +72,9 @@ ALL_SETTINGS_KEYS = [
     "yookassa_secret_key", "sbp_enabled", "receipt_email", "cryptobot_token",
     "caktuspay_token", "caktuspay_api_url",
     "heleket_merchant_id", "heleket_api_key", "domain", "referral_percentage",
-    "referral_discount", "ton_wallet_address", "tonapi_key", "force_subscription", "trial_enabled", "trial_duration_days", "enable_referrals", "minimum_withdrawal",
+    "referral_discount", "instant_access_enabled", "instant_access_host_name",
+    "instant_access_price_30m", "instant_access_price_60m",
+    "ton_wallet_address", "tonapi_key", "force_subscription", "trial_enabled", "trial_duration_days", "enable_referrals", "minimum_withdrawal",
     # Реферальные начисления: альтернативный фиксированный бонус
     "enable_fixed_referral_bonus", "fixed_referral_bonus_amount",
     # Тип начисления реферальной системы (без стартового бонуса)
@@ -86,6 +95,30 @@ ALL_SETTINGS_KEYS = [
     "yoomoney_enabled", "yoomoney_wallet", "yoomoney_secret", "yoomoney_api_token",
     "yoomoney_client_id", "yoomoney_client_secret", "yoomoney_redirect_uri",
 ]
+
+INSTANT_ACCESS_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+INSTANT_ACCESS_DURATIONS = (30, 60)
+
+def _setting_enabled(value: str | None) -> bool:
+    return str(value or "").strip().lower() in ("true", "1", "yes", "on")
+
+def _generate_instant_access_code(length: int = 8) -> str:
+    return "".join(secrets.choice(INSTANT_ACCESS_CODE_ALPHABET) for _ in range(max(4, int(length))))
+
+def _coerce_decimal(value, default: str) -> Decimal:
+    try:
+        return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal(default).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+def _format_expiry_timestamp(expiry_timestamp_ms: int | None) -> str | None:
+    try:
+        if expiry_timestamp_ms is None:
+            return None
+        dt = datetime.fromtimestamp(int(expiry_timestamp_ms) / 1000)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return None
 
 def create_webhook_app(bot_controller_instance):
     global _bot_controller
@@ -185,6 +218,399 @@ def create_webhook_app(bot_controller_instance):
             "brand_title": settings.get('panel_brand_title') or 'T‑Shift VPN',
         }
 
+    def _public_base_url() -> str:
+        configured_domain = str(get_setting("domain") or "").strip()
+        if configured_domain:
+            return configured_domain.rstrip("/")
+        return str(request.url_root or "").rstrip("/")
+
+    def _public_bot_username() -> str:
+        return str(get_setting("telegram_bot_username") or "").strip().lstrip("@")
+
+    def _resolve_instant_access_config() -> dict:
+        settings = get_all_settings()
+        host_name = str(settings.get("instant_access_host_name") or "").strip()
+        host = get_host(host_name) if host_name else None
+        if not host:
+            hosts = get_all_hosts()
+            host = hosts[0] if hosts else None
+        host_name_final = database.normalize_host_name((host or {}).get("host_name"))
+        return {
+            "enabled": _setting_enabled(settings.get("instant_access_enabled")),
+            "host": host,
+            "host_name": host_name_final,
+            "price_30m": _coerce_decimal(settings.get("instant_access_price_30m"), "100"),
+            "price_60m": _coerce_decimal(settings.get("instant_access_price_60m"), "180"),
+        }
+
+    def _get_public_payment_methods(amount_rub: Decimal) -> list[dict]:
+        methods: list[dict] = []
+        amount = _coerce_decimal(amount_rub, "0")
+        if str(get_setting("yookassa_shop_id") or "").strip() and str(get_setting("yookassa_secret_key") or "").strip():
+            methods.append({"id": "yookassa", "label": "Банковская карта", "icon": "₽"})
+        if str(get_setting("cryptobot_token") or "").strip():
+            methods.append({"id": "cryptobot", "label": "CryptoBot", "icon": "◈"})
+        if str(get_setting("caktuspay_token") or "").strip() and amount >= Decimal("100"):
+            methods.append({"id": "caktuspay", "label": "CaktusPay", "icon": "🌵"})
+        if str(get_setting("heleket_merchant_id") or "").strip() and str(get_setting("heleket_api_key") or "").strip():
+            methods.append({"id": "heleket", "label": "Heleket", "icon": "₿"})
+        if _setting_enabled(get_setting("yoomoney_enabled")) and str(get_setting("yoomoney_wallet") or "").strip():
+            methods.append({"id": "yoomoney", "label": "YooMoney", "icon": "Ю"})
+        return methods
+
+    def _serialize_instant_access_order(order: dict | None) -> dict | None:
+        if not order:
+            return None
+        status = str(order.get("status") or "pending").strip().lower() or "pending"
+        status_map = {
+            "pending": ("Ожидает оплату", "pending"),
+            "paid": ("Оплата получена, выдаю доступ", "processing"),
+            "ready": ("Доступ готов", "ready"),
+            "bound": ("Код уже привязан", "bound"),
+            "failed": ("Ошибка выдачи", "failed"),
+        }
+        status_label, status_variant = status_map.get(status, ("Неизвестный статус", "pending"))
+        bot_username = _public_bot_username()
+        bind_url = None
+        if bot_username and status in ("ready", "bound") and order.get("code"):
+            bind_url = f"https://t.me/{bot_username}?start=temp_{order['code']}"
+        return {
+            "code": order.get("code"),
+            "display_code": f"#{order['code']}" if order.get("code") else None,
+            "payment_id": order.get("payment_id"),
+            "status": status,
+            "status_label": status_label,
+            "status_variant": status_variant,
+            "payment_method": order.get("payment_method"),
+            "payment_url": order.get("payment_url"),
+            "host_name": order.get("host_name"),
+            "duration_minutes": order.get("duration_minutes"),
+            "price_rub": float(order.get("price_rub") or 0),
+            "connection_string": order.get("connection_string"),
+            "expires_at": _format_expiry_timestamp(order.get("expiry_timestamp_ms")),
+            "bind_url": bind_url,
+            "last_error": order.get("last_error"),
+        }
+
+    async def _create_public_yookassa_payment(
+        *,
+        payment_id: str,
+        code: str,
+        amount: Decimal,
+        duration_minutes: int,
+        host_name: str,
+        return_url: str,
+    ) -> tuple[str | None, str | None]:
+        shop_id = str(get_setting("yookassa_shop_id") or "").strip()
+        secret_key = str(get_setting("yookassa_secret_key") or "").strip()
+        if not shop_id or not secret_key:
+            return None, None
+        payment_payload = {
+            "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+            "confirmation": {"type": "redirect", "return_url": return_url},
+            "capture": True,
+            "description": f"VimoVpn timed access {duration_minutes} min",
+            "metadata": {
+                "action": "instant_access",
+                "payment_id": payment_id,
+                "code": code,
+                "host_name": host_name,
+                "duration_minutes": str(duration_minutes),
+                "payment_method": "yookassa",
+            },
+        }
+        payment = Payment.create(payment_payload, uuid.uuid4())
+        confirmation = getattr(payment, "confirmation", None)
+        pay_url = getattr(confirmation, "confirmation_url", None)
+        provider_payment_id = getattr(payment, "id", None)
+        if not pay_url and isinstance(payment, dict):
+            pay_url = (payment.get("confirmation") or {}).get("confirmation_url")
+            provider_payment_id = payment.get("id")
+        return (str(pay_url) if pay_url else None, str(provider_payment_id) if provider_payment_id else None)
+
+    async def _create_public_cryptobot_payment(
+        *,
+        payment_id: str,
+        amount: Decimal,
+        duration_minutes: int,
+    ) -> tuple[str | None, str | None]:
+        token = str(get_setting("cryptobot_token") or "").strip()
+        if not token:
+            return None, None
+        cp = CryptoPay(token)
+        invoice = await cp.create_invoice(
+            currency_type="fiat",
+            fiat="RUB",
+            amount=float(amount),
+            description=f"VimoVpn timed access {duration_minutes} min",
+            payload=payment_id,
+            expires_in=3600,
+        )
+        pay_url = getattr(invoice, "pay_url", None) or getattr(invoice, "bot_invoice_url", None)
+        invoice_id = getattr(invoice, "invoice_id", None)
+        if not pay_url and isinstance(invoice, dict):
+            pay_url = invoice.get("pay_url") or invoice.get("bot_invoice_url") or invoice.get("url")
+            invoice_id = invoice_id or invoice.get("invoice_id")
+        return (str(pay_url) if pay_url else None, str(invoice_id) if invoice_id else None)
+
+    async def _create_public_caktuspay_payment(
+        *,
+        payment_id: str,
+        amount: Decimal,
+        duration_minutes: int,
+        return_url: str,
+    ) -> tuple[str | None, str | None]:
+        token = str(get_setting("caktuspay_token") or "").strip()
+        if not token or amount < Decimal("100"):
+            return None, None
+        payload = {
+            "token": token,
+            "amount": float(amount),
+            "order_id": payment_id,
+            "description": f"VimoVpn timed access {duration_minutes} min",
+            "redirect_url": return_url,
+        }
+        response_data = await handlers._request_caktuspay_api("create", payload)
+        if not response_data or str(response_data.get("status") or "").lower() != "success":
+            return None, None
+        data = response_data.get("response") or {}
+        requisite = data.get("requisite") or {}
+        pay_url = data.get("url") or requisite.get("paymentLink") or requisite.get("receiverQR")
+        return (str(pay_url) if pay_url else None, None)
+
+    async def _create_public_heleket_payment(
+        *,
+        payment_id: str,
+        code: str,
+        amount: Decimal,
+        duration_minutes: int,
+        host_name: str,
+        callback_url: str,
+        return_url: str,
+    ) -> tuple[str | None, str | None]:
+        merchant_id = str(get_setting("heleket_merchant_id") or "").strip()
+        api_key = str(get_setting("heleket_api_key") or "").strip()
+        if not merchant_id or not api_key:
+            return None, None
+        metadata = {
+            "action": "instant_access",
+            "payment_id": payment_id,
+            "code": code,
+            "host_name": host_name,
+            "duration_minutes": int(duration_minutes),
+            "payment_method": "heleket",
+        }
+        data = {
+            "merchant_id": merchant_id,
+            "order_id": payment_id,
+            "amount": float(amount),
+            "currency": "RUB",
+            "description": json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+            "callback_url": callback_url,
+            "success_url": return_url,
+        }
+        sorted_data_str = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        base64_encoded = base64.b64encode(sorted_data_str.encode()).decode()
+        sign = hashlib.md5(f"{base64_encoded}{api_key}".encode()).hexdigest()
+        payload = dict(data)
+        payload["sign"] = sign
+        api_base = str(get_setting("heleket_api_base") or "https://api.heleket.com").rstrip("/")
+        endpoint = f"{api_base}/invoice/create"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(endpoint, json=payload, timeout=15) as resp:
+                if resp.status not in (200, 201):
+                    return None, None
+                response_data = await resp.json()
+        pay_url = response_data.get("payment_url") or response_data.get("pay_url") or response_data.get("url")
+        return (str(pay_url) if pay_url else None, None)
+
+    def _create_public_yoomoney_payment(
+        *,
+        payment_id: str,
+        amount: Decimal,
+        duration_minutes: int,
+        return_url: str,
+    ) -> tuple[str | None, str | None]:
+        wallet = str(get_setting("yoomoney_wallet") or "").strip()
+        if not wallet:
+            return None, None
+        pay_url = handlers._build_yoomoney_quickpay_url(
+            wallet=wallet,
+            amount=float(amount),
+            label=payment_id,
+            success_url=return_url,
+            targets=f"VimoVpn timed access {duration_minutes} min",
+        )
+        return (str(pay_url) if pay_url else None, None)
+
+    async def _create_public_payment(
+        *,
+        method_name: str,
+        payment_id: str,
+        code: str,
+        amount: Decimal,
+        duration_minutes: int,
+        host_name: str,
+        return_url: str,
+        callback_url: str,
+    ) -> tuple[str | None, str | None]:
+        method = (method_name or "").strip().lower()
+        if method == "yookassa":
+            return await _create_public_yookassa_payment(
+                payment_id=payment_id,
+                code=code,
+                amount=amount,
+                duration_minutes=duration_minutes,
+                host_name=host_name,
+                return_url=return_url,
+            )
+        if method == "cryptobot":
+            return await _create_public_cryptobot_payment(
+                payment_id=payment_id,
+                amount=amount,
+                duration_minutes=duration_minutes,
+            )
+        if method == "caktuspay":
+            return await _create_public_caktuspay_payment(
+                payment_id=payment_id,
+                amount=amount,
+                duration_minutes=duration_minutes,
+                return_url=return_url,
+            )
+        if method == "heleket":
+            return await _create_public_heleket_payment(
+                payment_id=payment_id,
+                code=code,
+                amount=amount,
+                duration_minutes=duration_minutes,
+                host_name=host_name,
+                callback_url=callback_url,
+                return_url=return_url,
+            )
+        if method == "yoomoney":
+            return _create_public_yoomoney_payment(
+                payment_id=payment_id,
+                amount=amount,
+                duration_minutes=duration_minutes,
+                return_url=return_url,
+            )
+        return None, None
+
+    async def _process_instant_access_payment(payment_id: str) -> dict | None:
+        order = get_instant_access_order_by_payment_id(payment_id)
+        if not order:
+            return None
+        status = str(order.get("status") or "").strip().lower()
+        if status in ("ready", "bound"):
+            return order
+
+        mark_instant_access_paid(payment_id)
+        order = get_instant_access_order_by_payment_id(payment_id) or order
+        key_email = str(order.get("key_email") or f"temp-{str(order.get('code') or '').lower()}@bot.local").strip()
+        expiry_timestamp_ms = order.get("expiry_timestamp_ms")
+        try:
+            expiry_value = int(expiry_timestamp_ms) if expiry_timestamp_ms is not None else None
+        except Exception:
+            expiry_value = None
+        if expiry_value is None or expiry_value <= 0:
+            expiry_value = int(time.time() * 1000) + int(order.get("duration_minutes") or 0) * 60 * 1000
+
+        try:
+            result = await xui_api.create_or_update_key_on_host(
+                host_name=str(order.get("host_name") or ""),
+                email=key_email,
+                expiry_timestamp_ms=expiry_value,
+            )
+            if not result:
+                mark_instant_access_failed(payment_id, "panel_provision_failed")
+                return get_instant_access_order_by_payment_id(payment_id)
+            mark_instant_access_ready(
+                payment_id=payment_id,
+                key_email=result.get("email") or key_email,
+                xui_client_uuid=result.get("client_uuid") or "",
+                connection_string=result.get("connection_string"),
+                expiry_timestamp_ms=int(result.get("expiry_timestamp_ms") or expiry_value),
+            )
+        except Exception as exc:
+            logger.error(f"Instant access provisioning failed for {payment_id}: {exc}", exc_info=True)
+            mark_instant_access_failed(payment_id, str(exc))
+        return get_instant_access_order_by_payment_id(payment_id)
+
+    async def _refresh_instant_access_order(payment_id: str) -> dict | None:
+        order = get_instant_access_order_by_payment_id(payment_id)
+        if not order:
+            return None
+        status = str(order.get("status") or "").strip().lower()
+        if status in ("ready", "bound"):
+            return order
+        if status == "paid":
+            return await _process_instant_access_payment(payment_id)
+
+        method_name = str(order.get("payment_method") or "").strip().lower()
+        if method_name == "caktuspay":
+            payment_info = await handlers.get_caktuspay_payment_info(payment_id)
+            if payment_info and str(payment_info.get("status") or "").upper() == "ACCEPT":
+                return await _process_instant_access_payment(payment_id)
+        elif method_name == "cryptobot" and order.get("provider_invoice_id"):
+            token = str(get_setting("cryptobot_token") or "").strip()
+            if token:
+                cp = CryptoPay(token)
+                invoices = await cp.get_invoices(invoice_ids=[int(order["provider_invoice_id"])])
+                if invoices:
+                    invoice = invoices[0]
+                    invoice_status = getattr(invoice, "status", None)
+                    if not invoice_status and isinstance(invoice, dict):
+                        invoice_status = invoice.get("status")
+                    if str(invoice_status or "").lower() == "paid":
+                        return await _process_instant_access_payment(payment_id)
+        elif method_name == "yoomoney":
+            operation = await handlers._yoomoney_find_payment(payment_id)
+            if operation:
+                return await _process_instant_access_payment(payment_id)
+        return get_instant_access_order_by_payment_id(payment_id)
+
+    def _dispatch_paid_metadata(metadata: dict | None) -> bool:
+        if not metadata:
+            return False
+        action = str(metadata.get("action") or "").strip().lower()
+        if action == "instant_access":
+            payment_id = str(metadata.get("payment_id") or "").strip()
+            if not payment_id:
+                return False
+            asyncio.run(_process_instant_access_payment(payment_id))
+            return True
+
+        bot = _bot_controller.get_bot_instance()
+        payment_processor = handlers.process_successful_payment
+        loop = current_app.config.get('EVENT_LOOP')
+        if metadata and bot is not None and payment_processor is not None and loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
+            return True
+        return False
+
+    def _build_landing_context(order: dict | None = None) -> dict:
+        config = _resolve_instant_access_config()
+        duration_options = []
+        for duration in INSTANT_ACCESS_DURATIONS:
+            price = config["price_30m"] if duration == 30 else config["price_60m"]
+            duration_options.append(
+                {
+                    "minutes": duration,
+                    "label": f"{duration} минут",
+                    "price_rub": float(price),
+                    "payment_methods": _get_public_payment_methods(price),
+                }
+            )
+        order_payload = _serialize_instant_access_order(order)
+        return {
+            "page_title": "VimoVpn Instant Access",
+            "landing_enabled": bool(config["enabled"] and config["host"]),
+            "landing_host": config["host_name"],
+            "duration_options": duration_options,
+            "active_order": order_payload,
+            "telegram_bot_username": _public_bot_username(),
+        }
+
     @flask_app.route('/brand-title', methods=['POST'])
     @login_required
     def update_brand_title_route():
@@ -210,9 +636,99 @@ def create_webhook_app(bot_controller_instance):
             return jsonify({"ok": False, "error": str(e)}), 500
 
     @flask_app.route('/')
-    @login_required
     def index():
-        return redirect(url_for('dashboard_page'))
+        return render_template('landing.html', **_build_landing_context())
+
+    @flask_app.route('/admin')
+    def admin_index():
+        if 'logged_in' in session:
+            return redirect(url_for('dashboard_page'))
+        return redirect(url_for('login_page'))
+
+    @flask_app.route('/instant-access/create', methods=['POST'])
+    def instant_access_create():
+        config = _resolve_instant_access_config()
+        if not config["enabled"] or not config["host"]:
+            flash('Временный доступ сейчас недоступен.', 'warning')
+            return redirect(url_for('index'))
+
+        duration_minutes = request.form.get('duration_minutes', type=int)
+        payment_method = str(request.form.get('payment_method') or '').strip().lower()
+        if duration_minutes not in INSTANT_ACCESS_DURATIONS:
+            flash('Выберите корректное время доступа.', 'danger')
+            return redirect(url_for('index'))
+
+        price = config["price_30m"] if duration_minutes == 30 else config["price_60m"]
+        available_methods = {item["id"] for item in _get_public_payment_methods(price)}
+        if payment_method not in available_methods:
+            flash('Этот способ оплаты сейчас недоступен.', 'danger')
+            return redirect(url_for('index'))
+
+        payment_id = str(uuid.uuid4())
+        code = None
+        for _ in range(10):
+            candidate_code = _generate_instant_access_code()
+            if create_instant_access_order(
+                code=candidate_code,
+                payment_id=payment_id,
+                payment_method=payment_method,
+                host_name=config["host_name"],
+                duration_minutes=duration_minutes,
+                price_rub=float(price),
+            ):
+                code = candidate_code
+                break
+        if not code:
+            flash('Не удалось создать заказ. Попробуйте ещё раз.', 'danger')
+            return redirect(url_for('index'))
+
+        payment_page_url = f"{_public_base_url()}{url_for('instant_access_status_page', payment_id=payment_id)}"
+        callback_url = f"{_public_base_url()}/heleket-webhook"
+        try:
+            pay_url, provider_invoice_id = asyncio.run(
+                _create_public_payment(
+                    method_name=payment_method,
+                    payment_id=payment_id,
+                    code=code,
+                    amount=price,
+                    duration_minutes=duration_minutes,
+                    host_name=config["host_name"],
+                    return_url=payment_page_url,
+                    callback_url=callback_url,
+                )
+            )
+        except Exception as exc:
+            logger.error(f"Failed to create public payment for {payment_id}: {exc}", exc_info=True)
+            mark_instant_access_failed(payment_id, str(exc))
+            flash('Не удалось подготовить оплату. Попробуйте позже.', 'danger')
+            return redirect(url_for('index'))
+
+        if not pay_url:
+            mark_instant_access_failed(payment_id, "payment_url_missing")
+            flash('Не удалось получить ссылку на оплату.', 'danger')
+            return redirect(url_for('index'))
+
+        set_instant_access_payment_context(
+            payment_id=payment_id,
+            payment_url=pay_url,
+            provider_invoice_id=provider_invoice_id,
+        )
+        return redirect(url_for('instant_access_status_page', payment_id=payment_id))
+
+    @flask_app.route('/instant-access/<payment_id>')
+    def instant_access_status_page(payment_id: str):
+        order = asyncio.run(_refresh_instant_access_order(payment_id))
+        if not order:
+            flash('Заказ не найден.', 'warning')
+            return redirect(url_for('index'))
+        return render_template('landing.html', **_build_landing_context(order))
+
+    @flask_app.route('/instant-access/<payment_id>/status.json')
+    def instant_access_status_json(payment_id: str):
+        order = asyncio.run(_refresh_instant_access_order(payment_id))
+        if not order:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+        return jsonify({"ok": True, "order": _serialize_instant_access_order(order)})
 
     @flask_app.route('/dashboard')
     @login_required
@@ -1255,7 +1771,7 @@ def create_webhook_app(bot_controller_instance):
                 update_setting('panel_password', request.form.get('panel_password'))
 
             # Обработка чекбоксов, где в форме идёт hidden=false + checkbox=true
-            checkbox_keys = ['force_subscription', 'sbp_enabled', 'trial_enabled', 'enable_referrals', 'enable_fixed_referral_bonus', 'stars_enabled', 'yoomoney_enabled', 'monitoring_enabled']
+            checkbox_keys = ['force_subscription', 'sbp_enabled', 'trial_enabled', 'enable_referrals', 'enable_fixed_referral_bonus', 'stars_enabled', 'yoomoney_enabled', 'monitoring_enabled', 'instant_access_enabled']
             for checkbox_key in checkbox_keys:
                 values = request.form.getlist(checkbox_key)
                 value = values[-1] if values else 'false'
@@ -1704,15 +2220,7 @@ def create_webhook_app(bot_controller_instance):
             if event_json.get("event") == "payment.succeeded":
                 metadata = event_json.get("object", {}).get("metadata", {})
                 
-                bot = _bot_controller.get_bot_instance()
-                payment_processor = handlers.process_successful_payment
-
-                if metadata and bot is not None and payment_processor is not None:
-                    loop = current_app.config.get('EVENT_LOOP')
-                    if loop and loop.is_running():
-                        asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
-                    else:
-                        logger.error("YooKassa вебхук: цикл событий недоступен!")
+                _dispatch_paid_metadata(metadata)
             return 'OK', 200
         except Exception as e:
             logger.error(f"Ошибка в обработчике вебхука YooKassa: {e}", exc_info=True)
@@ -1740,6 +2248,14 @@ def create_webhook_app(bot_controller_instance):
                     currency_name=(payload_data.get('paid_asset') or payload_data.get('asset') or payload_data.get('fiat') or "CRYPTO"),
                     amount_currency=(float(payload_data.get('paid_amount')) if payload_data.get('paid_amount') is not None else None),
                 )
+                if metadata:
+                    _dispatch_paid_metadata(metadata)
+                    return 'OK', 200
+
+                if get_instant_access_order_by_payment_id(payload_string):
+                    asyncio.run(_process_instant_access_payment(payload_string))
+                    return 'OK', 200
+
                 if metadata:
                     bot = _bot_controller.get_bot_instance()
                     loop = current_app.config.get('EVENT_LOOP')
@@ -1769,7 +2285,10 @@ def create_webhook_app(bot_controller_instance):
                     # Дополнительное поле promo_code поддерживается, если присутствует 10‑й элемент
                     "promo_code": (parts[9] if len(parts) > 9 and parts[9] else None),
                 }
-                
+
+                _dispatch_paid_metadata(metadata)
+                return 'OK', 200
+
                 bot = _bot_controller.get_bot_instance()
                 loop = current_app.config.get('EVENT_LOOP')
                 payment_processor = handlers.process_successful_payment
@@ -1810,6 +2329,10 @@ def create_webhook_app(bot_controller_instance):
             verified_status = str(payment_info.get('status') or '').upper()
             if verified_status != "ACCEPT":
                 logger.info(f"CaktusPay webhook: verified status for {order_id} is {verified_status}")
+                return 'OK', 200
+
+            if get_instant_access_order_by_payment_id(order_id):
+                asyncio.run(_process_instant_access_payment(order_id))
                 return 'OK', 200
 
             bot = _bot_controller.get_bot_instance()
@@ -1866,13 +2389,7 @@ def create_webhook_app(bot_controller_instance):
                 if not metadata_str: return 'Error', 400
                 
                 metadata = json.loads(metadata_str)
-                
-                bot = _bot_controller.get_bot_instance()
-                loop = current_app.config.get('EVENT_LOOP')
-                payment_processor = handlers.process_successful_payment
-
-                if bot and loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
+                _dispatch_paid_metadata(metadata)
             
             return 'OK', 200
         except Exception as e:
@@ -2165,6 +2682,20 @@ def create_webhook_app(bot_controller_instance):
                 
                 # Здесь должна быть логика обработки платежа
                 logger.info(f"YooMoney payment: {amount} RUB, label: {label}")
+                if label and get_instant_access_order_by_payment_id(label):
+                    asyncio.run(_process_instant_access_payment(label))
+                    return 'OK', 200
+
+                metadata = find_and_complete_pending_transaction(
+                    payment_id=label,
+                    amount_rub=amount,
+                    payment_method="YooMoney",
+                    currency_name="RUB",
+                    amount_currency=None,
+                )
+                if metadata:
+                    _dispatch_paid_metadata(metadata)
+                    return 'OK', 200
                 
                 # Уведомляем бота о платеже
                 try:

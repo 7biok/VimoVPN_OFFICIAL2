@@ -180,7 +180,33 @@ def initialize_db():
                 )
             ''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_button_configs_menu_type ON button_configs(menu_type, sort_order)")
-            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS instant_access_orders (
+                    code TEXT PRIMARY KEY,
+                    payment_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    payment_method TEXT NOT NULL,
+                    host_name TEXT NOT NULL,
+                    duration_minutes INTEGER NOT NULL,
+                    price_rub REAL NOT NULL,
+                    payment_url TEXT,
+                    provider_invoice_id TEXT,
+                    key_email TEXT,
+                    xui_client_uuid TEXT,
+                    connection_string TEXT,
+                    expiry_timestamp_ms INTEGER,
+                    bound_user_id INTEGER,
+                    bound_key_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    paid_at TIMESTAMP,
+                    bound_at TIMESTAMP,
+                    last_error TEXT
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_payment_id ON instant_access_orders(payment_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_bound_user ON instant_access_orders(bound_user_id)")
+             
             default_settings = {
                 "panel_login": "admin",
                 "panel_password": "admin",
@@ -244,6 +270,10 @@ def initialize_db():
                 "enable_referrals": "true",
                 "referral_percentage": "10",
                 "referral_discount": "5",
+                "instant_access_enabled": "true",
+                "instant_access_host_name": None,
+                "instant_access_price_30m": "100",
+                "instant_access_price_60m": "180",
                 "minimum_withdrawal": "100",
                 "admin_telegram_id": None,
                 "admin_telegram_ids": None,
@@ -929,6 +959,61 @@ def run_migration():
         except sqlite3.Error as e:
             logging.error(f"Не удалось подготовить таблицы промокодов: {e}")
 
+        # Ensure instant access orders table exists for public timed-access purchases
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS instant_access_orders (
+                    code TEXT PRIMARY KEY,
+                    payment_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    payment_method TEXT NOT NULL,
+                    host_name TEXT NOT NULL,
+                    duration_minutes INTEGER NOT NULL,
+                    price_rub REAL NOT NULL,
+                    payment_url TEXT,
+                    provider_invoice_id TEXT,
+                    key_email TEXT,
+                    xui_client_uuid TEXT,
+                    connection_string TEXT,
+                    expiry_timestamp_ms INTEGER,
+                    bound_user_id INTEGER,
+                    bound_key_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    paid_at TIMESTAMP,
+                    bound_at TIMESTAMP,
+                    last_error TEXT
+                )
+                '''
+            )
+            cursor.execute("PRAGMA table_info(instant_access_orders)")
+            ia_cols = {row[1] for row in cursor.fetchall()}
+            instant_columns = {
+                'payment_url': "ALTER TABLE instant_access_orders ADD COLUMN payment_url TEXT",
+                'provider_invoice_id': "ALTER TABLE instant_access_orders ADD COLUMN provider_invoice_id TEXT",
+                'key_email': "ALTER TABLE instant_access_orders ADD COLUMN key_email TEXT",
+                'xui_client_uuid': "ALTER TABLE instant_access_orders ADD COLUMN xui_client_uuid TEXT",
+                'connection_string': "ALTER TABLE instant_access_orders ADD COLUMN connection_string TEXT",
+                'expiry_timestamp_ms': "ALTER TABLE instant_access_orders ADD COLUMN expiry_timestamp_ms INTEGER",
+                'bound_user_id': "ALTER TABLE instant_access_orders ADD COLUMN bound_user_id INTEGER",
+                'bound_key_id': "ALTER TABLE instant_access_orders ADD COLUMN bound_key_id INTEGER",
+                'created_at': "ALTER TABLE instant_access_orders ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'updated_at': "ALTER TABLE instant_access_orders ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'paid_at': "ALTER TABLE instant_access_orders ADD COLUMN paid_at TIMESTAMP",
+                'bound_at': "ALTER TABLE instant_access_orders ADD COLUMN bound_at TIMESTAMP",
+                'last_error': "ALTER TABLE instant_access_orders ADD COLUMN last_error TEXT",
+            }
+            for column_name, statement in instant_columns.items():
+                if column_name not in ia_cols:
+                    cursor.execute(statement)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_payment_id ON instant_access_orders(payment_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_bound_user ON instant_access_orders(bound_user_id)")
+            conn.commit()
+        except sqlite3.Error as e:
+            logging.error(f"Не удалось подготовить таблицу instant_access_orders: {e}")
+
         conn.close()
         
         logging.info("--- Миграция базы данных успешно завершена! ---")
@@ -1385,6 +1470,279 @@ def get_transaction_status(payment_id: str) -> str | None:
     except sqlite3.Error as e:
         logging.error(f"Не удалось получить статус транзакции {payment_id}: {e}")
         return None
+
+def create_instant_access_order(
+    code: str,
+    payment_id: str,
+    payment_method: str,
+    host_name: str,
+    duration_minutes: int,
+    price_rub: float,
+) -> bool:
+    try:
+        code_s = (code or "").strip().upper()
+        payment_id_s = (payment_id or "").strip()
+        payment_method_s = (payment_method or "").strip()
+        host_name_s = normalize_host_name(host_name)
+        duration_value = int(duration_minutes)
+        price_value = float(price_rub)
+        if not code_s or not payment_id_s or not payment_method_s or not host_name_s or duration_value <= 0:
+            return False
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO instant_access_orders (
+                    code, payment_id, status, payment_method, host_name, duration_minutes, price_rub
+                ) VALUES (?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (code_s, payment_id_s, payment_method_s, host_name_s, duration_value, price_value),
+            )
+            conn.commit()
+            return True
+    except sqlite3.IntegrityError as e:
+        logging.warning(f"Не удалось создать instant_access_orders запись для payment_id={payment_id}: {e}")
+        return False
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось создать instant_access_orders запись для payment_id={payment_id}: {e}")
+        return False
+
+def set_instant_access_payment_context(
+    payment_id: str,
+    payment_url: str | None = None,
+    provider_invoice_id: str | None = None,
+) -> bool:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET payment_url = COALESCE(?, payment_url),
+                    provider_invoice_id = COALESCE(?, provider_invoice_id),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE payment_id = ?
+                """,
+                (
+                    (payment_url or "").strip() or None,
+                    (str(provider_invoice_id).strip() if provider_invoice_id is not None else None),
+                    (payment_id or "").strip(),
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить контекст instant_access_orders для payment_id={payment_id}: {e}")
+        return False
+
+def mark_instant_access_paid(payment_id: str) -> bool:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET status = CASE WHEN status = 'bound' THEN 'bound' ELSE 'paid' END,
+                    paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_error = NULL
+                WHERE payment_id = ?
+                """,
+                ((payment_id or "").strip(),),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отметить instant_access_orders как оплаченный для payment_id={payment_id}: {e}")
+        return False
+
+def mark_instant_access_ready(
+    payment_id: str,
+    key_email: str,
+    xui_client_uuid: str,
+    connection_string: str | None,
+    expiry_timestamp_ms: int,
+) -> bool:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET status = CASE WHEN status = 'bound' THEN 'bound' ELSE 'ready' END,
+                    key_email = ?,
+                    xui_client_uuid = ?,
+                    connection_string = ?,
+                    expiry_timestamp_ms = ?,
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_error = NULL
+                WHERE payment_id = ?
+                """,
+                (
+                    (key_email or "").strip(),
+                    (xui_client_uuid or "").strip(),
+                    (connection_string or "").strip() or None,
+                    int(expiry_timestamp_ms),
+                    (payment_id or "").strip(),
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отметить instant_access_orders как готовый для payment_id={payment_id}: {e}")
+        return False
+
+def mark_instant_access_failed(payment_id: str, error_text: str) -> bool:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET status = 'failed',
+                    last_error = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE payment_id = ?
+                """,
+                (((error_text or "").strip() or "unknown_error"), (payment_id or "").strip()),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отметить instant_access_orders как failed для payment_id={payment_id}: {e}")
+        return False
+
+def get_instant_access_order_by_payment_id(payment_id: str) -> dict | None:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM instant_access_orders WHERE payment_id = ? LIMIT 1",
+                ((payment_id or "").strip(),),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить instant_access_orders по payment_id={payment_id}: {e}")
+        return None
+
+def get_instant_access_order_by_code(code: str) -> dict | None:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM instant_access_orders WHERE UPPER(code) = UPPER(?) LIMIT 1",
+                (((code or "").strip()),),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить instant_access_orders по коду={code}: {e}")
+        return None
+
+def bind_instant_access_code(code: str, user_id: int) -> dict:
+    code_s = (code or "").strip().upper()
+    try:
+        user_id_int = int(user_id)
+    except Exception:
+        return {"status": "invalid_user"}
+    if not code_s:
+        return {"status": "invalid_code"}
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM instant_access_orders WHERE UPPER(code) = UPPER(?) LIMIT 1", (code_s,))
+            order_row = cursor.fetchone()
+            if not order_row:
+                return {"status": "missing"}
+
+            order = dict(order_row)
+            order_status = str(order.get("status") or "").strip().lower()
+
+            if order_status == "failed":
+                return {"status": "failed", "order": order}
+            if order_status not in ("ready", "bound"):
+                return {"status": "pending", "order": order}
+
+            bound_user_id = order.get("bound_user_id")
+            if bound_user_id is not None:
+                try:
+                    bound_user_id = int(bound_user_id)
+                except Exception:
+                    bound_user_id = None
+
+            if bound_user_id and bound_user_id != user_id_int:
+                return {"status": "conflict", "order": order}
+
+            key_row = None
+            if order.get("bound_key_id"):
+                cursor.execute("SELECT * FROM vpn_keys WHERE key_id = ? LIMIT 1", (int(order["bound_key_id"]),))
+                key_row = cursor.fetchone()
+            if key_row is None and order.get("key_email"):
+                cursor.execute("SELECT * FROM vpn_keys WHERE key_email = ? LIMIT 1", (order["key_email"],))
+                key_row = cursor.fetchone()
+
+            if key_row is not None:
+                key_data = dict(key_row)
+                try:
+                    existing_user_id = int(key_data.get("user_id"))
+                except Exception:
+                    existing_user_id = None
+                if existing_user_id and existing_user_id != user_id_int:
+                    return {"status": "conflict", "order": order, "key": key_data}
+                key_id = int(key_data["key_id"])
+                result_status = "already_bound" if order_status == "bound" and bound_user_id == user_id_int else "bound"
+            else:
+                if not order.get("host_name") or not order.get("xui_client_uuid") or not order.get("key_email") or not order.get("expiry_timestamp_ms"):
+                    return {"status": "invalid_order", "order": order}
+                expiry_date = datetime.fromtimestamp(int(order["expiry_timestamp_ms"]) / 1000)
+                cursor.execute(
+                    """
+                    INSERT INTO vpn_keys (user_id, host_name, xui_client_uuid, key_email, expiry_date)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id_int,
+                        normalize_host_name(order["host_name"]),
+                        order["xui_client_uuid"],
+                        order["key_email"],
+                        expiry_date,
+                    ),
+                )
+                key_id = int(cursor.lastrowid)
+                result_status = "bound"
+
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET status = 'bound',
+                    bound_user_id = ?,
+                    bound_key_id = ?,
+                    bound_at = COALESCE(bound_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_error = NULL
+                WHERE code = ?
+                """,
+                (user_id_int, key_id, code_s),
+            )
+            conn.commit()
+
+            cursor.execute("SELECT * FROM instant_access_orders WHERE code = ? LIMIT 1", (code_s,))
+            updated_order = cursor.fetchone()
+            cursor.execute("SELECT * FROM vpn_keys WHERE key_id = ? LIMIT 1", (key_id,))
+            key_data_row = cursor.fetchone()
+
+            return {
+                "status": result_status,
+                "order": dict(updated_order) if updated_order else order,
+                "key": dict(key_data_row) if key_data_row else None,
+            }
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось привязать instant_access_orders код {code_s} к пользователю {user_id_int}: {e}")
+        return {"status": "error"}
 
 def insert_host_speedtest(
     host_name: str,

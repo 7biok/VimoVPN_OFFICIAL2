@@ -52,6 +52,7 @@ from shop_bot.data_manager.database import (
     set_referral_start_bonus_received,
     find_and_complete_pending_transaction,
     get_transaction_status,
+    bind_instant_access_code,
     check_promo_code_available,
     redeem_promo_code,
     update_promo_code_status,
@@ -219,20 +220,62 @@ def get_user_router() -> Router:
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.full_name
         referrer_id = None
+        temp_access_code = None
 
-        if command.args and command.args.startswith('ref_'):
-            try:
-                potential_referrer_id = int(command.args.split('_')[1])
-                if potential_referrer_id != user_id:
-                    referrer_id = potential_referrer_id
-                    logger.info(f"Новый пользователь {user_id} был приглашен пользователем {referrer_id}")
-            except (IndexError, ValueError):
-                logger.warning(f"Получен некорректный реферальный код: {command.args}")
+        if command.args:
+            start_args = (command.args or "").strip()
+            if start_args.startswith('temp_'):
+                temp_access_code = re.sub(r'[^A-Z0-9]', '', start_args[len('temp_'):].upper())[:32] or None
+            elif start_args.startswith('ref_'):
+                try:
+                    potential_referrer_id = int(start_args.split('_')[1])
+                    if potential_referrer_id != user_id:
+                        referrer_id = potential_referrer_id
+                        logger.info(f"Новый пользователь {user_id} был приглашен пользователем {referrer_id}")
+                except (IndexError, ValueError):
+                    logger.warning(f"Получен некорректный реферальный код: {start_args}")
                 
         register_user_if_not_exists(user_id, username, referrer_id)
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.full_name
         user_data = get_user(user_id)
+        start_notice_text = None
+
+        if temp_access_code:
+            bind_result = bind_instant_access_code(temp_access_code, user_id)
+            bind_status = bind_result.get("status")
+            if bind_status == "bound":
+                start_notice_text = (
+                    f"✅ Код <b>#{temp_access_code}</b> привязан.\n"
+                    "Ключ добавлен в раздел «Мои ключи»."
+                )
+            elif bind_status == "already_bound":
+                start_notice_text = (
+                    f"ℹ️ Код <b>#{temp_access_code}</b> уже привязан к вашему профилю.\n"
+                    "Он доступен в разделе «Мои ключи»."
+                )
+            elif bind_status == "pending":
+                start_notice_text = (
+                    f"⏳ Код <b>#{temp_access_code}</b> ещё не готов.\n"
+                    "Завершите оплату на сайте и повторно откройте кнопку привязки."
+                )
+            elif bind_status == "conflict":
+                start_notice_text = (
+                    f"❌ Код <b>#{temp_access_code}</b> уже привязан к другому Telegram-профилю."
+                )
+            elif bind_status == "failed":
+                start_notice_text = (
+                    f"❌ Заказ с кодом <b>#{temp_access_code}</b> завершился с ошибкой. Напишите в поддержку."
+                )
+            elif bind_status == "missing":
+                start_notice_text = f"❌ Код <b>#{temp_access_code}</b> не найден."
+            else:
+                start_notice_text = (
+                    f"❌ Не удалось привязать код <b>#{temp_access_code}</b>. Попробуйте позже."
+                )
+
+        if start_notice_text:
+            await message.answer(start_notice_text, disable_web_page_preview=True)
 
         # Бонус при старте для пригласившего (fixed_start_referrer): единоразово, когда новый пользователь запускает бота по реферальной ссылке
         try:
