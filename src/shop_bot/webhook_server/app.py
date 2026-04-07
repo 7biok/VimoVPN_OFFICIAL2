@@ -41,7 +41,7 @@ from shop_bot.data_manager.database import (
     update_host_url, update_host_hiddify_settings, update_host_name, update_host_ssh_settings, get_latest_speedtest, get_speedtests,
     get_all_keys, get_keys_for_user, get_key_by_id, delete_key_by_id, update_key_comment, update_key_info,
     add_new_key, get_balance, adjust_user_balance, get_referrals_for_user,
-    get_user, get_key_by_email, get_host)
+    get_user, get_key_by_email, get_host, find_and_complete_pending_transaction)
 
 
 _bot_controller = None
@@ -1730,6 +1730,24 @@ def create_webhook_app(bot_controller_instance):
                 
                 if not payload_string:
                     logger.warning("CryptoBot вебхук: Получен оплаченный invoice, но payload пустой.")
+                    return 'OK', 200
+
+                metadata = find_and_complete_pending_transaction(
+                    payment_id=payload_string,
+                    amount_rub=None,
+                    payment_method="CryptoBot",
+                    currency_name=(payload_data.get('paid_asset') or payload_data.get('asset') or payload_data.get('fiat') or "CRYPTO"),
+                    amount_currency=(float(payload_data.get('paid_amount')) if payload_data.get('paid_amount') is not None else None),
+                )
+                if metadata:
+                    bot = _bot_controller.get_bot_instance()
+                    loop = current_app.config.get('EVENT_LOOP')
+                    payment_processor = handlers.process_successful_payment
+
+                    if bot and loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(payment_processor(bot, metadata), loop)
+                    else:
+                        logger.error("CryptoBot РІРµР±С…СѓРє: РЅРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ РїР»Р°С‚С‘Р¶ вЂ” Р±РѕС‚ РёР»Рё С†РёРєР» СЃРѕР±С‹С‚РёР№ РЅРµ Р·Р°РїСѓС‰РµРЅС‹.")
                     return 'OK', 200
 
                 parts = payload_string.split(':')

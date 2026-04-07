@@ -186,6 +186,32 @@ def get_user_router() -> Router:
         except Exception:
             return int(float(stars))
 
+    def _setting_enabled(key: str) -> bool:
+        value = get_setting(key)
+        return str(value or "").strip().lower() in ("true", "1", "yes", "on")
+
+    def _get_runtime_payment_methods() -> dict:
+        return {
+            "yookassa": bool((get_setting("yookassa_shop_id") or "").strip() and (get_setting("yookassa_secret_key") or "").strip()),
+            "heleket": bool((get_setting("heleket_merchant_id") or "").strip() and (get_setting("heleket_api_key") or "").strip()),
+            "cryptobot": bool((get_setting("cryptobot_token") or "").strip()),
+            "tonconnect": bool((get_setting("ton_wallet_address") or "").strip() and (get_setting("tonapi_key") or "").strip()),
+            "stars": _setting_enabled("stars_enabled"),
+            "yoomoney": _setting_enabled("yoomoney_enabled") and bool((get_setting("yoomoney_wallet") or "").strip()),
+        }
+
+    def _resolve_final_price(default_price: Decimal, state_data: dict) -> Decimal:
+        final_price = default_price
+        try:
+            final_price_from_state = state_data.get("final_price")
+            if final_price_from_state is not None:
+                final_price = Decimal(str(final_price_from_state)).quantize(Decimal("0.01"))
+        except Exception:
+            final_price = default_price
+        if final_price < Decimal("0"):
+            final_price = Decimal("0.00")
+        return final_price
+
     @user_router.message(CommandStart())
     async def start_handler(message: types.Message, state: FSMContext, bot: Bot, command: CommandObject):
         user_id = message.from_user.id
@@ -504,9 +530,10 @@ def get_user_router() -> Router:
             return
         final_amount = amount.quantize(Decimal("0.01"))
         await state.update_data(topup_amount=float(final_amount))
+        payment_methods = _get_runtime_payment_methods()
         await message.answer(
             f"К пополнению: {final_amount:.2f} RUB\nВыберите способ оплаты:",
-            reply_markup=keyboards.create_topup_payment_method_keyboard(PAYMENT_METHODS)
+            reply_markup=keyboards.create_topup_payment_method_keyboard(payment_methods)
         )
         await state.set_state(TopUpProcess.waiting_for_topup_method)
 
@@ -659,6 +686,7 @@ def get_user_router() -> Router:
         # и сохраняем полные метаданные во временную pending‑транзакцию.
         payment_id = str(uuid.uuid4())
         metadata = {
+            "payment_id": payment_id,
             "user_id": callback.from_user.id,
             "price": float(amount_rub),
             "action": "top_up",
@@ -677,6 +705,7 @@ def get_user_router() -> Router:
                 title=title,
                 description=description,
                 payload=payload,
+                provider_token="",
                 currency="XTR",
                 prices=[types.LabeledPrice(label="Пополнение", amount=stars_count)],
             )
@@ -707,12 +736,19 @@ def get_user_router() -> Router:
         }
         try:
             if callback.data == "topup_pay_cryptobot":
+                payment_id = str(uuid.uuid4())
+                metadata = {
+                    "payment_id": payment_id,
+                    "user_id": callback.from_user.id,
+                    "price": float(amount),
+                    "action": "top_up",
+                    "payment_method": "CryptoBot",
+                }
+                create_pending_transaction(payment_id, callback.from_user.id, float(amount), metadata)
                 result = await _create_cryptobot_invoice(
-                    user_id=user_id,
+                    payment_id=payment_id,
                     price_rub=float(amount),
-                    months=0,
-                    host_name="",
-                    state_data=state_data,
+                    description=f"Пополнение баланса на {float(amount):.2f} RUB",
                 )
                 if result:
                     pay_url, invoice_id = result
@@ -806,6 +842,20 @@ def get_user_router() -> Router:
                 
                 if not payload_string and isinstance(invoice, dict):
                     payload_string = invoice.get("payload")
+
+                if payload_string:
+                    metadata = find_and_complete_pending_transaction(
+                        payment_id=payload_string,
+                        amount_rub=None,
+                        payment_method="CryptoBot",
+                        currency_name="CRYPTO",
+                        amount_currency=None,
+                    )
+                    if metadata:
+                        await process_successful_payment(bot, metadata)
+                        await callback.message.edit_text("вњ… РџР»Р°С‚РµР¶ СѓСЃРїРµС€РЅРѕ РѕР±СЂР°Р±РѕС‚Р°РЅ! Р‘Р°Р»Р°РЅСЃ РїРѕРїРѕР»РЅРµРЅ.")
+                        await state.clear()
+                        return
                 
                 if not payload_string:
                     logger.error(f"CryptoBot проверка пополнения: не найден payload для счета {invoice_id}")
@@ -1940,12 +1990,13 @@ def get_user_router() -> Router:
             main_balance = 0.0
 
         show_balance_btn = main_balance >= float(final_price)
+        payment_methods = _get_runtime_payment_methods()
 
         try:
             await message.edit_text(
                 message_text,
                 reply_markup=keyboards.create_payment_method_keyboard(
-                    payment_methods=PAYMENT_METHODS,
+                    payment_methods=payment_methods,
                     action=data.get('action'),
                     key_id=data.get('key_id'),
                     show_balance=show_balance_btn,
@@ -1958,7 +2009,7 @@ def get_user_router() -> Router:
             await message.answer(
                 message_text,
                 reply_markup=keyboards.create_payment_method_keyboard(
-                    payment_methods=PAYMENT_METHODS,
+                    payment_methods=payment_methods,
                     action=data.get('action'),
                     key_id=data.get('key_id'),
                     show_balance=show_balance_btn,
@@ -2247,11 +2298,12 @@ def get_user_router() -> Router:
             if discount_percentage > 0:
                 price_rub = base_price - (base_price * discount_percentage / 100).quantize(Decimal("0.01"))
         months = int(plan['months'])
-        price_decimal = Decimal(str(price_rub)).quantize(Decimal("0.01"))
+        price_decimal = _resolve_final_price(Decimal(str(price_rub)).quantize(Decimal("0.01")), data)
         stars_count = _calc_stars_amount(price_decimal)
         # Для Stars ограничим payload до UUID, метаданные сохраним в pending‑транзакцию
         payment_id = str(uuid.uuid4())
         metadata = {
+            "payment_id": payment_id,
             "user_id": callback.from_user.id,
             "months": months,
             "price": float(price_decimal),
@@ -2279,6 +2331,7 @@ def get_user_router() -> Router:
                 title=title,
                 description=description,
                 payload=payload,
+                provider_token="",
                 currency="XTR",
                 prices=[types.LabeledPrice(label=f"{months} мес.", amount=stars_count)],
             )
@@ -2288,8 +2341,8 @@ def get_user_router() -> Router:
             await callback.message.edit_text("❌ Не удалось создать счёт Stars. Попробуйте другой способ оплаты.")
             await state.clear()
 
-    @user_router.callback_query(PaymentProcess.waiting_for_payment_method, F.data == "pay_cryptobot")
-    async def create_cryptobot_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
+    @user_router.callback_query(PaymentProcess.waiting_for_payment_method, (F.data == "pay_cryptobot") | (F.data == "pay_heleket"))
+    async def create_crypto_invoice_handler(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Создаю счет в Crypto Pay...")
         
         data = await state.get_data()
@@ -2301,6 +2354,32 @@ def get_user_router() -> Router:
         host_name = data.get('host_name')
         action = data.get('action')
         key_id = data.get('key_id')
+
+        if callback.data == "pay_heleket":
+            final_price_decimal = Decimal("0.00")
+            plan = get_plan_by_id(plan_id)
+            if not plan:
+                await callback.message.edit_text("вќЊ РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР° РїСЂРё РІС‹Р±РѕСЂРµ С‚Р°СЂРёС„Р°.")
+                await state.clear()
+                return
+            base_price = Decimal(str(plan['price']))
+            final_price_decimal = _resolve_final_price(base_price, data)
+            pay_url = await _create_heleket_payment_request(
+                user_id=callback.from_user.id,
+                price=float(final_price_decimal),
+                months=int(plan['months']),
+                host_name=data.get('host_name'),
+                state_data=data,
+            )
+            if pay_url:
+                await callback.message.edit_text(
+                    "РќР°Р¶РјРёС‚Рµ РЅР° РєРЅРѕРїРєСѓ РЅРёР¶Рµ РґР»СЏ РѕРїР»Р°С‚С‹:",
+                    reply_markup=keyboards.create_payment_keyboard(pay_url)
+                )
+            else:
+                await callback.message.edit_text("вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ СЃС‡С‘С‚. РџРѕРїСЂРѕР±СѓР№С‚Рµ РґСЂСѓРіРѕР№ СЃРїРѕСЃРѕР± РѕРїР»Р°С‚С‹.")
+            await state.clear()
+            return
 
         cryptobot_token = get_setting('cryptobot_token')
         if not cryptobot_token:
@@ -2325,15 +2404,30 @@ def get_user_router() -> Router:
                 discount_amount = (base_price * discount_percentage / 100).quantize(Decimal("0.01"))
                 price_rub_decimal = base_price - discount_amount
         months = plan['months']
-
-        final_price_float = float(price_rub_decimal)
+        final_price_decimal = _resolve_final_price(price_rub_decimal, data)
+        final_price_float = float(final_price_decimal)
+        payment_id = str(uuid.uuid4())
+        metadata = {
+            "payment_id": payment_id,
+            "user_id": callback.from_user.id,
+            "months": int(months),
+            "price": final_price_float,
+            "action": data.get('action'),
+            "key_id": data.get('key_id'),
+            "host_name": data.get('host_name'),
+            "plan_id": data.get('plan_id'),
+            "customer_email": data.get('customer_email'),
+            "payment_method": "CryptoBot",
+            "promo_code": data.get('promo_code'),
+            "promo_discount_percent": data.get('promo_discount_percent'),
+            "promo_discount_amount": data.get('promo_discount_amount'),
+        }
+        create_pending_transaction(payment_id, callback.from_user.id, final_price_float, metadata)
 
         result = await _create_cryptobot_invoice(
-            user_id=callback.from_user.id,
+            payment_id=payment_id,
             price_rub=final_price_float,
-            months=plan['months'],
-            host_name=data.get('host_name'),
-            state_data=data,
+            description=f"Оплата тарифа на {int(months)} мес.",
         )
         
         if result:
@@ -2407,6 +2501,20 @@ def get_user_router() -> Router:
                 
                 if not payload_string and isinstance(invoice, dict):
                     payload_string = invoice.get("payload")
+
+                if payload_string:
+                    metadata = find_and_complete_pending_transaction(
+                        payment_id=payload_string,
+                        amount_rub=None,
+                        payment_method="CryptoBot",
+                        currency_name="CRYPTO",
+                        amount_currency=None,
+                    )
+                    if metadata:
+                        await process_successful_payment(bot, metadata)
+                        await callback.message.edit_text("вњ… РџР»Р°С‚РµР¶ СѓСЃРїРµС€РЅРѕ РѕР±СЂР°Р±РѕС‚Р°РЅ!")
+                        await state.clear()
+                        return
                 
                 if not payload_string:
                     logger.error(f"CryptoBot проверка: не найден payload для счета {invoice_id}")
@@ -2733,11 +2841,9 @@ async def _create_heleket_payment_request(
         return None
 
 async def _create_cryptobot_invoice(
-    user_id: int,
+    payment_id: str,
     price_rub: float,
-    months: int,
-    host_name: str,
-    state_data: dict,
+    description: str,
 ) -> Optional[tuple[str, int]]:
     """Создать счёт в Telegram Crypto Pay и вернуть ссылку на оплату и ID счета.
 
@@ -2754,7 +2860,46 @@ async def _create_cryptobot_invoice(
             logger.error("CryptoBot: не задан cryptobot_token")
             return None
 
-        rate = await get_usdt_rub_rate()
+        amount_rub = Decimal(str(price_rub)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        cp = CryptoPay(token)
+        invoice_kwargs = {
+            "currency_type": "fiat",
+            "fiat": "RUB",
+            "amount": float(amount_rub),
+            "description": description,
+            "payload": payment_id,
+            "expires_in": 3600,
+        }
+        if TELEGRAM_BOT_USERNAME:
+            invoice_kwargs["paid_btn_name"] = "openBot"
+            invoice_kwargs["paid_btn_url"] = f"https://t.me/{TELEGRAM_BOT_USERNAME}"
+        invoice = await cp.create_invoice(**invoice_kwargs)
+
+        pay_url = None
+        invoice_id = None
+        try:
+            pay_url = getattr(invoice, "pay_url", None) or getattr(invoice, "bot_invoice_url", None)
+            invoice_id = getattr(invoice, "invoice_id", None)
+        except Exception:
+            pass
+
+        if not pay_url and isinstance(invoice, dict):
+            pay_url = invoice.get("pay_url") or invoice.get("bot_invoice_url") or invoice.get("url")
+
+        if not invoice_id and isinstance(invoice, dict):
+            invoice_id = invoice.get("invoice_id")
+
+        if not pay_url:
+            logger.error(f"CryptoBot: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ СЃСЃС‹Р»РєСѓ РЅР° РѕРїР»Р°С‚Сѓ РёР· РѕС‚РІРµС‚Р°: {invoice}")
+            return None
+
+        if not invoice_id:
+            logger.error(f"CryptoBot: РЅРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ invoice_id РёР· РѕС‚РІРµС‚Р°: {invoice}")
+            return None
+
+        return (str(pay_url), int(invoice_id))
+
+        amount_rub = Decimal(str(price_rub)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if not rate or rate <= 0:
             logger.error("CryptoBot: не удалось получить курс USDT/RUB")
             return None
