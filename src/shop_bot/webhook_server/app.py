@@ -38,7 +38,7 @@ from shop_bot.data_manager.database import (
     get_tickets_paginated, get_open_tickets_count, get_ticket, get_ticket_messages,
     add_support_message, set_ticket_status, delete_ticket,
     get_closed_tickets_count, get_all_tickets_count, update_host_subscription_url,
-    update_host_url, update_host_name, update_host_ssh_settings, get_latest_speedtest, get_speedtests,
+    update_host_url, update_host_hiddify_settings, update_host_name, update_host_ssh_settings, get_latest_speedtest, get_speedtests,
     get_all_keys, get_keys_for_user, get_key_by_id, delete_key_by_id, update_key_comment, update_key_info,
     add_new_key, get_balance, adjust_user_balance, get_referrals_for_user,
     get_user, get_key_by_email, get_host)
@@ -542,7 +542,7 @@ def create_webhook_app(bot_controller_instance):
             logger.error(f"Не удалось создать/обновить ключ на хосте: {e}")
             result = None
         if not result:
-            flash('Не удалось создать ключ на хосте. Проверьте доступность XUI.', 'danger')
+            flash('Не удалось создать ключ на хосте. Проверьте доступность Hiddify.', 'danger')
             return redirect(request.referrer or url_for('admin_keys_page'))
 
         # Обновляем UUID и expiry на основании ответа панели
@@ -1375,6 +1375,22 @@ def create_webhook_app(bot_controller_instance):
         flash('URL хоста обновлён.' if ok else 'Не удалось обновить URL хоста.', 'success' if ok else 'danger')
         return redirect(url_for('settings_page', tab='hosts'))
 
+    @flask_app.route('/update-host-hiddify', methods=['POST'])
+    @login_required
+    def update_host_hiddify_route():
+        host_name = (request.form.get('host_name') or '').strip()
+        api_key = (request.form.get('host_api_key') or '').strip()
+        proxy_path = (request.form.get('host_proxy_path') or '').strip().strip('/')
+        if not host_name:
+            flash('Не указан хост для обновления Hiddify-настроек.', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+        ok = update_host_hiddify_settings(host_name, api_key=api_key or None, proxy_path=proxy_path or None)
+        flash(
+            'Hiddify-настройки хоста обновлены.' if ok else 'Не удалось обновить Hiddify-настройки хоста.',
+            'success' if ok else 'danger'
+        )
+        return redirect(url_for('settings_page', tab='hosts'))
+
     @flask_app.route('/rename-host', methods=['POST'])
     @login_required
     def rename_host_route():
@@ -1595,10 +1611,13 @@ def create_webhook_app(bot_controller_instance):
         create_host(
             name=request.form['host_name'],
             url=request.form['host_url'],
-            user=request.form['host_username'],
-            passwd=request.form['host_pass'],
-            inbound=int(request.form['host_inbound_id']),
-            subscription_url=(request.form.get('host_subscription_url') or '').strip() or None
+            user=(request.form.get('host_username') or '').strip() or None,
+            passwd=(request.form.get('host_pass') or '').strip() or None,
+            inbound=int(request.form.get('host_inbound_id') or 0),
+            subscription_url=(request.form.get('host_subscription_url') or '').strip() or None,
+            panel_type='hiddify',
+            api_key=(request.form.get('host_api_key') or '').strip() or None,
+            proxy_path=(request.form.get('host_proxy_path') or '').strip().strip('/') or None,
         )
         flash(f"Хост '{request.form['host_name']}' успешно добавлен.", 'success')
         return redirect(url_for('settings_page', tab='hosts'))

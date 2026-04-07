@@ -130,7 +130,7 @@ async def check_expiring_subscriptions(bot: Bot):
             logger.error(f"Scheduler: Ошибка обработки истечения для ключа {key.get('key_id')}: {e}")
 
 async def sync_keys_with_panels():
-    logger.debug("Scheduler: Запускаю синхронизацию с XUI-панелями...")
+    logger.debug("Scheduler: Запускаю синхронизацию с Hiddify-панелями...")
     total_affected_records = 0
     
     all_hosts = database.get_all_hosts()
@@ -143,20 +143,22 @@ async def sync_keys_with_panels():
         logger.debug(f"Scheduler: Обрабатываю хост: '{host_name}'")
         
         try:
-            api, inbound = xui_api.login_to_host(
-                host_url=host['host_url'],
-                username=host['host_username'],
-                password=host['host_pass'],
-                inbound_id=host['host_inbound_id']
-            )
-
-            if not api or not inbound:
-                logger.error(f"Scheduler: Не удалось авторизоваться на хосте '{host_name}'. Пропускаю его.")
+            users_on_server = await xui_api.list_users_on_host(host_name)
+            if users_on_server is None:
+                logger.error(f"Scheduler: Не удалось получить пользователей с панели '{host_name}'. Пропускаю хост.")
                 continue
-            
-            full_inbound_details = api.inbound.get_by_id(inbound.id)
-            clients_on_server = {client.email: client for client in (full_inbound_details.settings.clients or [])}
-            logger.debug(f"Scheduler: Найдено клиентов на панели '{host_name}': {len(clients_on_server)}")
+
+            users_by_uuid = {
+                str(user.get('uuid')).strip(): user
+                for user in users_on_server
+                if str(user.get('uuid') or '').strip()
+            }
+            users_by_name = {
+                str(user.get('name')).strip(): user
+                for user in users_on_server
+                if str(user.get('name') or '').strip()
+            }
+            logger.debug(f"Scheduler: Найдено пользователей на панели '{host_name}': {len(users_on_server)}")
 
             keys_in_db = database.get_keys_for_host(host_name)
             
@@ -178,16 +180,34 @@ async def sync_keys_with_panels():
                         logger.warning(f"Scheduler: Попытка удалить ключ '{key_email}' из локальной БД — записей не затронуто.")
                     continue
 
-                server_client = clients_on_server.pop(key_email, None)
+                server_user = None
+                stored_uuid = str(db_key.get('xui_client_uuid') or '').strip()
+                if stored_uuid:
+                    server_user = users_by_uuid.pop(stored_uuid, None)
+                    if server_user:
+                        user_name = str(server_user.get('name') or '').strip()
+                        if user_name:
+                            users_by_name.pop(user_name, None)
+                if not server_user:
+                    server_user = users_by_name.pop(key_email, None)
+                    if server_user:
+                        server_uuid = str(server_user.get('uuid') or '').strip()
+                        if server_uuid:
+                            users_by_uuid.pop(server_uuid, None)
 
-                if server_client:
-                    reset_days = server_client.reset if server_client.reset is not None else 0
-                    server_expiry_ms = server_client.expiry_time + reset_days * 24 * 3600 * 1000
+                if server_user:
+                    server_expiry_ms = xui_api.get_user_expiry_timestamp_ms(server_user)
                     local_expiry_dt = expiry_date
                     local_expiry_ms = int(local_expiry_dt.timestamp() * 1000)
 
-                    if abs(server_expiry_ms - local_expiry_ms) > 1000:
-                        database.update_key_status_from_server(key_email, server_client)
+                    if server_expiry_ms and abs(server_expiry_ms - local_expiry_ms) > 1000:
+                        database.update_key_status_from_server(
+                            key_email,
+                            {
+                                'uuid': server_user.get('uuid'),
+                                'expiry_timestamp_ms': server_expiry_ms,
+                            },
+                        )
                         total_affected_records += 1
                         logger.debug(f"Scheduler: Синхронизирован ключ '{key_email}' для хоста '{host_name}' (обновлён).")
                 else:
@@ -195,10 +215,17 @@ async def sync_keys_with_panels():
                     database.update_key_status_from_server(key_email, None)
                     total_affected_records += 1
 
-            if clients_on_server:
+            remaining_users = list(users_by_uuid.values())
+            if remaining_users:
                 # Try to attach orphan clients from panel to local DB so old keys get subscriptions
-                for orphan_email, orphan_client in clients_on_server.items():
+                for orphan_user in remaining_users:
                     try:
+                        orphan_email = str(orphan_user.get('name') or '').strip()
+                        if not orphan_email:
+                            logger.warning(
+                                f"Scheduler: Найден пользователь без имени/email на '{host_name}', пропускаю."
+                            )
+                            continue
                         # Extract user_id from email like: user12345-key1-...@telegram.bot
                         import re
                         m = re.search(r"user(\d+)", orphan_email)
@@ -222,11 +249,10 @@ async def sync_keys_with_panels():
                         if existing:
                             continue
 
-                        reset_days = getattr(orphan_client, 'reset', 0) or 0
-                        expiry_ms = int(getattr(orphan_client, 'expiry_time', 0)) + int(reset_days) * 24 * 3600 * 1000
-                        client_uuid = getattr(orphan_client, 'id', None) or getattr(orphan_client, 'email', None) or ''
+                        expiry_ms = xui_api.get_user_expiry_timestamp_ms(orphan_user)
+                        client_uuid = str(orphan_user.get('uuid') or '').strip()
 
-                        if not client_uuid:
+                        if not client_uuid or not expiry_ms:
                             logger.warning(
                                 f"Scheduler: У осиротевшего клиента '{orphan_email}' нет UUID/id — не могу привязать."
                             )
@@ -257,7 +283,7 @@ async def sync_keys_with_panels():
         except Exception as e:
             logger.error(f"Scheduler: Непредвиденная ошибка при обработке хоста '{host_name}': {e}", exc_info=True)
             
-    logger.debug(f"Scheduler: Синхронизация с XUI-панелями завершена. Затронуто записей: {total_affected_records}.")
+    logger.debug(f"Scheduler: Синхронизация с Hiddify-панелями завершена. Затронуто записей: {total_affected_records}.")
 
 async def periodic_subscription_check(bot_controller: BotController):
     logger.info("Scheduler: Планировщик фоновых задач запущен.")

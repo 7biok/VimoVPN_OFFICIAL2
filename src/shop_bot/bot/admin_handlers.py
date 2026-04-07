@@ -2084,7 +2084,7 @@ def get_admin_router() -> Router:
             logging.error(f"Подарочный поток: не удалось создать клиента на хосте '{host_name}' для пользователя {user_id}: {e}")
 
         if not host_resp or not host_resp.get("client_uuid") or not host_resp.get("expiry_timestamp_ms"):
-            await message.answer("❌ Не удалось выдать ключ на сервере. Проверьте настройки хоста и доступность панели XUI.")
+            await message.answer("❌ Не удалось выдать ключ на сервере. Проверьте настройки хоста и доступность панели Hiddify.")
             await state.clear()
             await show_admin_menu(message)
             return

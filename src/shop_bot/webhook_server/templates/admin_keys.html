@@ -34,13 +34,13 @@
           <select class="form-select rounded-3 select-soft" id="host_name" name="host_name" required>
             <option value="" selected disabled>Выберите хост...</option>
             {% for h in hosts %}
-            <option value="{{ h.host_name }}" data-inbound="{{ h.host_inbound_id }}">{{ h.host_name }}</option>
+            <option value="{{ h.host_name }}" data-proxy="{{ h.host_proxy_path or '' }}">{{ h.host_name }}</option>
             {% endfor %}
           </select>
         </div>
       </div>
       <div class="col-12 col-sm-2">
-        <label class="form-label" for="inbound_id">Inbound ID</label>
+        <label class="form-label" for="inbound_id">Proxy Path</label>
         <input class="form-control rounded-3" type="text" id="inbound_id" placeholder="—" readonly />
       </div>
       <div class="col-12 col-sm-4">
@@ -151,7 +151,7 @@
   </div>
   <div id="toastErr" class="toast align-items-center text-bg-danger border-0 mt-2" role="alert" aria-live="assertive" aria-atomic="true">
     <div class="d-flex">
-      <div class="toast-body">Ошибка при выдаче ключа. Проверьте данные и доступность XUI.</div>
+      <div class="toast-body">Ошибка при выдаче ключа. Проверьте данные и доступность Hiddify.</div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
     </div>
   </div>
@@ -347,7 +347,7 @@
         // Поищем option по value вручную
         opt = Array.from(hostSel.options || []).find(o => String(o.value) === String(hostSel.value));
       }
-      inboundEl.value = (opt && opt.getAttribute('data-inbound')) ? opt.getAttribute('data-inbound') : '—';
+      inboundEl.value = (opt && opt.getAttribute('data-proxy')) ? opt.getAttribute('data-proxy') : '—';
     }
     async function loadPlansAndRestore() {
       if (!hostSel || !planSel) return;

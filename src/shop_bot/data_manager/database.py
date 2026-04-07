@@ -78,9 +78,12 @@ def initialize_db():
                 CREATE TABLE IF NOT EXISTS xui_hosts(
                     host_name TEXT NOT NULL,
                     host_url TEXT NOT NULL,
-                    host_username TEXT NOT NULL,
-                    host_pass TEXT NOT NULL,
-                    host_inbound_id INTEGER NOT NULL,
+                    host_username TEXT NOT NULL DEFAULT '',
+                    host_pass TEXT NOT NULL DEFAULT '',
+                    host_inbound_id INTEGER NOT NULL DEFAULT 0,
+                    panel_type TEXT NOT NULL DEFAULT 'hiddify',
+                    host_api_key TEXT,
+                    host_proxy_path TEXT,
                     subscription_url TEXT,
                     ssh_host TEXT,
                     ssh_port INTEGER,
@@ -716,6 +719,15 @@ def run_migration():
         if table_exists:
             cursor.execute("PRAGMA table_info(xui_hosts)")
             xh_columns = [row[1] for row in cursor.fetchall()]
+            if 'panel_type' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN panel_type TEXT DEFAULT 'hiddify'")
+                logging.info(" -> Столбец 'panel_type' успешно добавлен в 'xui_hosts'.")
+            if 'host_api_key' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN host_api_key TEXT")
+                logging.info(" -> Столбец 'host_api_key' успешно добавлен в 'xui_hosts'.")
+            if 'host_proxy_path' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN host_proxy_path TEXT")
+                logging.info(" -> Столбец 'host_proxy_path' успешно добавлен в 'xui_hosts'.")
             if 'subscription_url' not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN subscription_url TEXT")
                 logging.info(" -> Столбец 'subscription_url' успешно добавлен в 'xui_hosts'.")
@@ -757,6 +769,17 @@ def run_migration():
                 logging.info(" -> Нормализованы существующие значения host_name в 'xui_hosts'.")
             except Exception as e:
                 logging.warning(f" -> Не удалось нормализовать существующие значения host_name: {e}")
+            try:
+                cursor.execute(
+                    """
+                    UPDATE xui_hosts
+                    SET panel_type = 'hiddify'
+                    WHERE panel_type IS NULL OR TRIM(panel_type) = ''
+                    """
+                )
+                conn.commit()
+            except Exception as e:
+                logging.warning(f" -> Не удалось нормализовать panel_type в 'xui_hosts': {e}")
         else:
             logging.warning("Таблица 'xui_hosts' не найдена, пропускаю её миграцию.")
         # Create table for host speedtests
@@ -924,7 +947,7 @@ def create_new_transactions_table(cursor: sqlite3.Cursor):
         )
     ''')
 
-def create_host(name: str, url: str, user: str, passwd: str, inbound: int, subscription_url: str | None = None):
+def _legacy_create_host_xui(name: str, url: str, user: str, passwd: str, inbound: int, subscription_url: str | None = None):
     try:
         name = normalize_host_name(name)
         url = (url or "").strip()
@@ -950,6 +973,60 @@ def create_host(name: str, url: str, user: str, passwd: str, inbound: int, subsc
                 )
             conn.commit()
             logging.info(f"Успешно создан новый хост: {name}")
+    except sqlite3.Error as e:
+        logging.error(f"Ошибка при создании хоста '{name}': {e}")
+
+def create_host(
+    name: str,
+    url: str,
+    user: str | None = None,
+    passwd: str | None = None,
+    inbound: int | None = None,
+    subscription_url: str | None = None,
+    panel_type: str = "hiddify",
+    api_key: str | None = None,
+    proxy_path: str | None = None,
+):
+    try:
+        name = normalize_host_name(name)
+        url = (url or "").strip()
+        user = (user or "").strip()
+        passwd = passwd or ""
+        try:
+            inbound = int(inbound)
+        except Exception:
+            inbound = 0
+        subscription_url = (subscription_url or None)
+
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO xui_hosts (
+                        host_name, host_url, host_username, host_pass, host_inbound_id,
+                        panel_type, host_api_key, host_proxy_path, subscription_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        name,
+                        url,
+                        user,
+                        passwd,
+                        inbound,
+                        (panel_type or "hiddify").strip() or "hiddify",
+                        (api_key or "").strip() or None,
+                        (proxy_path or "").strip().strip("/") or None,
+                        subscription_url,
+                    ),
+                )
+            except sqlite3.OperationalError:
+                cursor.execute(
+                    "INSERT INTO xui_hosts (host_name, host_url, host_username, host_pass, host_inbound_id, subscription_url) VALUES (?, ?, ?, ?, ?, ?)",
+                    (name, url, user, passwd, inbound, subscription_url)
+                )
+            conn.commit()
+            logging.info(f"Создан новый хост: {name}")
     except sqlite3.Error as e:
         logging.error(f"Ошибка при создании хоста '{name}': {e}")
 
@@ -1009,6 +1086,40 @@ def update_host_url(host_name: str, new_url: str) -> bool:
             return cursor.rowcount > 0
     except sqlite3.Error as e:
         logging.error(f"Не удалось обновить host_url для хоста '{host_name}': {e}")
+        return False
+
+def update_host_hiddify_settings(
+    host_name: str,
+    api_key: str | None = None,
+    proxy_path: str | None = None,
+    panel_type: str = "hiddify",
+) -> bool:
+    try:
+        host_name_n = normalize_host_name(host_name)
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name_n,))
+            if cursor.fetchone() is None:
+                logging.warning(f"update_host_hiddify_settings: хост не найден '{host_name_n}'")
+                return False
+
+            cursor.execute(
+                """
+                UPDATE xui_hosts
+                SET panel_type = ?, host_api_key = ?, host_proxy_path = ?
+                WHERE TRIM(host_name) = TRIM(?)
+                """,
+                (
+                    (panel_type or "hiddify").strip() or "hiddify",
+                    (api_key or "").strip() or None,
+                    (proxy_path or "").strip().strip("/") or None,
+                    host_name_n,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить Hiddify-настройки для хоста '{host_name}': {e}")
         return False
 
 def update_host_name(old_name: str, new_name: str) -> bool:
@@ -2103,8 +2214,27 @@ def update_key_status_from_server(key_email: str, xui_client_data):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             if xui_client_data:
-                expiry_date = datetime.fromtimestamp(xui_client_data.expiry_time / 1000)
-                cursor.execute("UPDATE vpn_keys SET xui_client_uuid = ?, expiry_date = ? WHERE key_email = ?", (xui_client_data.id, expiry_date, key_email))
+                if isinstance(xui_client_data, dict):
+                    client_uuid = (
+                        xui_client_data.get('uuid')
+                        or xui_client_data.get('id')
+                        or xui_client_data.get('xui_client_uuid')
+                    )
+                    expiry_raw = (
+                        xui_client_data.get('expiry_timestamp_ms')
+                        or xui_client_data.get('expiry_time')
+                    )
+                    if expiry_raw is None:
+                        from shop_bot.modules import xui_api as panel_api
+                        expiry_raw = panel_api.get_user_expiry_timestamp_ms(xui_client_data)
+                    expiry_date = datetime.fromtimestamp(int(expiry_raw) / 1000)
+                    cursor.execute(
+                        "UPDATE vpn_keys SET xui_client_uuid = ?, expiry_date = ? WHERE key_email = ?",
+                        (client_uuid, expiry_date, key_email),
+                    )
+                else:
+                    expiry_date = datetime.fromtimestamp(xui_client_data.expiry_time / 1000)
+                    cursor.execute("UPDATE vpn_keys SET xui_client_uuid = ?, expiry_date = ? WHERE key_email = ?", (xui_client_data.id, expiry_date, key_email))
             else:
                 cursor.execute("DELETE FROM vpn_keys WHERE key_email = ?", (key_email,))
             conn.commit()
