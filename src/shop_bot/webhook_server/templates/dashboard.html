@@ -1,135 +1,266 @@
-{% extends "base.html" %} {% block title %}Главная страница{% endblock %} {% block content %}
+{% extends "base.html" %}
+{% block title %}Главная страница{% endblock %}
+{% block content %}
 
-<div class="page-header d-print-none">
-  <div class="row align-items-center">
-    <div class="col">
-      <h2 class="page-title">Главная</h2>
-      <div class="text-secondary">Сводка и ключевые метрики</div>
+<div class="dashboard-shell">
+  <div class="dashboard-hero">
+    <section class="dashboard-briefing">
+      <div class="dashboard-kicker">Оперативный обзор</div>
+      <h1>Центр управления VimoVpn</h1>
+      <p>
+        Это основная рабочая зона администратора: отсюда видно состояние ботов, хостов, пользователей,
+        платежей и всего публичного контура. Структура собрана как единая диспетчерская панель, а не набор
+        разрозненных экранов.
+      </p>
+
+      <div class="dashboard-feed">
+        <a href="{{ url_for('users_page') }}" class="dashboard-feed__item">
+          <i class="ti ti-users"></i>
+          <div>
+            <strong>Пользователи и доступы</strong>
+            <span>{{ stats.user_count }} пользователей и {{ stats.total_keys }} ключей уже в системе.</span>
+          </div>
+        </a>
+        <a href="{{ url_for('support_list_page') }}" class="dashboard-feed__item">
+          <i class="ti ti-lifebuoy"></i>
+          <div>
+            <strong>Поддержка</strong>
+            <span>Открытых тикетов сейчас: {{ open_tickets_count or 0 }}. Разбор обращений вынесен в отдельный раздел.</span>
+          </div>
+        </a>
+        <a href="{{ url_for('monitor_page') }}" class="dashboard-feed__item">
+          <i class="ti ti-activity-heartbeat"></i>
+          <div>
+            <strong>Мониторинг</strong>
+            <span>Скорость, пинг, нагрузка и состояние хостов доступны без перехода в сторонние панели.</span>
+          </div>
+        </a>
+        <a href="{{ url_for('settings_page') }}" class="dashboard-feed__item">
+          <i class="ti ti-settings"></i>
+          <div>
+            <strong>Платежи и публичный лендинг</strong>
+            <span>Управление тарифами, быстрым доступом, Hiddify и интеграциями собрано в настройках.</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <aside class="dashboard-sidecard">
+      <div class="dashboard-kicker">Сводка по сервисам</div>
+      <div class="dashboard-sidecard__list">
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Основной бот</strong>
+            <span>{{ 'В работе' if bot_status.is_running else 'Остановлен' }}</span>
+          </div>
+          <span class="{% if bot_status.is_running %}text-success{% else %}text-secondary{% endif %}">
+            {{ 'Online' if bot_status.is_running else 'Offline' }}
+          </span>
+        </div>
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Support-бот</strong>
+            <span>{{ 'В работе' if support_bot_status.is_running else 'Остановлен' }}</span>
+          </div>
+          <span class="{% if support_bot_status.is_running %}text-success{% else %}text-secondary{% endif %}">
+            {{ 'Online' if support_bot_status.is_running else 'Offline' }}
+          </span>
+        </div>
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Хосты</strong>
+            <span>Точки выдачи и продления</span>
+          </div>
+          <span>{{ stats.host_count }}</span>
+        </div>
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Оборот</strong>
+            <span>Суммарные платежи</span>
+          </div>
+          <span>{{ stats.total_spent | round(2) }} RUB</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="dashboard-alert-strip">
+    <div class="dashboard-alert-strip__title">
+      <i class="ti ti-flame"></i>
+      <span>Горячая зона</span>
     </div>
-  </div>
-  <div id="dash-stats" class="row row-deck row-cards mt-2"
-       data-fetch-url="{{ url_for('dashboard_stats_partial') }}"
-       data-fetch-interval="8000">
-    {% include 'partials/dashboard_stats.html' %}
-  </div>
-  
-</div>
+    <div
+      id="dash-stats"
+      class="row row-deck row-cards g-3"
+      data-fetch-url="{{ url_for('dashboard_stats_partial') }}"
+      data-fetch-interval="8000"
+    >
+      {% include 'partials/dashboard_stats.html' %}
+    </div>
+  </section>
 
-<div class="row row-cards">
-  <div class="col-lg-7">
-    <!-- Speedtests compact block (left column, compact) -->
-    <div class="card card-compact glass mb-3">
-      <div class="card-body py-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-          <div class="me-2" style="min-width:260px; max-width:420px; flex:1 1 auto;">
-            <label class="form-label mb-1 small">Хост</label>
-            <div class="soft-select" id="st_host_softselect" data-target="st-host">
-              <button type="button" class="soft-select-toggle" id="st_host_toggle">Выберите хост...</button>
-              <div class="soft-select-menu" id="st_host_menu"></div>
-              <select id="st-host" class="form-select form-select-sm select-soft">
-                {% for h in hosts %}
-                <option value="{{ h.host_name }}">{{ h.host_name }}</option>
-                {% endfor %}
-              </select>
+  <section class="dashboard-toolbar">
+    <div class="dashboard-toolbar__group">
+      <a href="{{ url_for('admin_keys_page') }}" class="dashboard-toolbar__chip"><i class="ti ti-key"></i><span>Выдать ключ</span></a>
+      <a href="{{ url_for('users_page') }}" class="dashboard-toolbar__chip"><i class="ti ti-user-search"></i><span>Открыть пользователей</span></a>
+      <a href="{{ url_for('support_list_page') }}" class="dashboard-toolbar__chip"><i class="ti ti-message-dots"></i><span>Разобрать тикеты</span></a>
+      <a href="{{ url_for('settings_page') }}" class="dashboard-toolbar__chip"><i class="ti ti-adjustments"></i><span>Проверить настройки</span></a>
+    </div>
+    <div class="dashboard-toolbar__summary text-secondary">
+      Блоки статистики и транзакций на странице обновляются автоматически без перезагрузки.
+    </div>
+  </section>
+
+  <div class="dashboard-grid">
+    <div class="dashboard-column">
+      <div class="card card-compact glass">
+        <div class="card-header">
+          <h3 class="card-title">Скорость и хосты</h3>
+        </div>
+        <div class="card-body py-2">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <div class="me-2" style="min-width:260px; max-width:420px; flex:1 1 auto;">
+              <label class="form-label mb-1 small">Хост</label>
+              <div class="soft-select" id="st_host_softselect" data-target="st-host">
+                <button type="button" class="soft-select-toggle" id="st_host_toggle">Выберите хост...</button>
+                <div class="soft-select-menu" id="st_host_menu"></div>
+                <select id="st-host" class="form-select form-select-sm select-soft">
+                  {% for h in hosts %}
+                  <option value="{{ h.host_name }}">{{ h.host_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="small text-secondary mb-1">Последний результат</div>
+              <div id="st-latest" class="tiny text-truncate">—</div>
             </div>
           </div>
-          <div class="flex-grow-1 min-w-0">
-            <div class="small text-secondary mb-1">Последний результат</div>
-            <div id="st-latest" class="tiny text-truncate">—</div>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <form id="st-run-form" action="#" method="post" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="hidden" name="method" value="both" />
+              <button type="submit" class="btn btn-primary btn-xs pill">Проверить выбранный</button>
+            </form>
+            <form id="st-run-all-form" action="{{ url_for('run_all_speedtests_route') }}" method="post" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button type="submit" class="btn btn-outline-secondary btn-xs pill">Запустить для всех</button>
+            </form>
+          </div>
+          <div class="chart" style="height: 280px;">
+            <canvas id="st-top-canvas"></canvas>
           </div>
         </div>
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <form id="st-run-form" action="#" method="post" class="m-0">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-            <input type="hidden" name="method" value="both" />
-            <button type="submit" class="btn btn-primary btn-xs pill">Проверить выбранный</button>
-          </form>
-          <form id="st-run-all-form" action="{{ url_for('run_all_speedtests_route') }}" method="post" class="m-0">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-            <button type="submit" class="btn btn-outline-secondary btn-xs pill">Запустить для всех</button>
-          </form>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Новые пользователи за 30 дней</h3>
         </div>
-        <div class="chart" style="height: 280px;">
-          <canvas id="st-top-canvas"></canvas>
+        <div class="card-body">
+          <div class="chart" style="height: 280px">
+            <canvas id="newUsersChart"></canvas>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">Новые пользователи (30 дней)</h3>
-      </div>
-      <div class="card-body">
-        <div class="chart" style="height: 280px">
-          <canvas id="newUsersChart"></canvas>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Новые ключи за 30 дней</h3>
+        </div>
+        <div class="card-body">
+          <div class="chart" style="height: 280px">
+            <canvas id="newKeysChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="card mt-3">
-      <div class="card-header">
-        <h3 class="card-title">Новые ключи (30 дней)</h3>
+    <div class="dashboard-column">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Активные хосты</h3>
+        </div>
+        <div class="card-body">
+          <div class="dashboard-hosts">
+            {% if hosts %}
+              {% for host in hosts[:5] %}
+                <div class="dashboard-hosts__item">
+                  <strong>{{ host.host_name }}</strong>
+                  {% if host.latest_speedtest %}
+                    <span>
+                      ↓ {{ host.latest_speedtest.download_mbps or '—' }} Mbps ·
+                      ↑ {{ host.latest_speedtest.upload_mbps or '—' }} Mbps ·
+                      ping {{ host.latest_speedtest.ping_ms or '—' }} ms
+                    </span>
+                  {% else %}
+                    <span>Последний speedtest ещё не собран.</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="dashboard-hosts__item">
+                <strong>Хосты не добавлены</strong>
+                <span>Откройте настройки и добавьте Hiddify-хост для работы сервиса.</span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
       </div>
-      <div class="card-body">
-        <div class="chart" style="height: 280px">
-          <canvas id="newKeysChart"></canvas>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Недавние транзакции</h3>
+        </div>
+        <div class="card-body">
+          {% if transactions %}
+          <div class="table-responsive">
+            <table class="table table-vcenter">
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Хост</th>
+                  <th>План</th>
+                  <th>Цена</th>
+                  <th>Дата</th>
+                </tr>
+              </thead>
+              <tbody
+                id="dash-transactions"
+                data-fetch-url="{{ url_for('dashboard_transactions_partial', page=current_page) }}"
+                data-fetch-interval="10000"
+              >
+                {% include 'partials/dashboard_transactions.html' %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if total_pages > 1 %}
+          <div class="d-flex justify-content-center mt-3">
+            <ul class="pagination">
+              <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('dashboard_page', page=current_page - 1) }}" aria-label="Previous">«</a>
+              </li>
+              {% for p in range(1, total_pages + 1) %}
+              <li class="page-item {% if p == current_page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('dashboard_page', page=p) }}">{{ p }}</a>
+              </li>
+              {% endfor %}
+              <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('dashboard_page', page=current_page + 1) }}" aria-label="Next">»</a>
+              </li>
+            </ul>
+          </div>
+          {% endif %}
+          {% else %}
+          <p class="text-secondary">Пока нет транзакций для отображения.</p>
+          {% endif %}
         </div>
       </div>
     </div>
-  </div>
-
-  <div class="col-lg-5">
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">Недавние транзакции</h3>
-      </div>
-      <div class="card-body">
-        {% if transactions %}
-        <div class="table-responsive">
-          <table class="table table-vcenter">
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Хост</th>
-                <th>План</th>
-                <th>Цена</th>
-                <th>Дата</th>
-              </tr>
-            </thead>
-            <tbody id="dash-transactions"
-                   data-fetch-url="{{ url_for('dashboard_transactions_partial', page=current_page) }}"
-                   data-fetch-interval="10000">
-              {% include 'partials/dashboard_transactions.html' %}
-            </tbody>
-          </table>
-        </div>
-
-        {% if total_pages > 1 %}
-        <div class="d-flex justify-content-center mt-3">
-          <ul class="pagination">
-            <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
-              <a class="page-link" href="{{ url_for('dashboard_page', page=current_page - 1) }}" aria-label="Previous">«</a>
-            </li>
-            {% for p in range(1, total_pages + 1) %}
-            <li class="page-item {% if p == current_page %}active{% endif %}">
-              <a class="page-link" href="{{ url_for('dashboard_page', page=p) }}">{{ p }}</a>
-            </li>
-            {% endfor %}
-            <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
-              <a class="page-link" href="{{ url_for('dashboard_page', page=current_page + 1) }}" aria-label="Next">»</a>
-            </li>
-          </ul>
-        </div>
-        {% endif %}
-        {% else %}
-        <p class="text-secondary">Пока нет транзакций для отображения.</p>
-        {% endif %}
-      </div>
-    </div>
-
   </div>
 </div>
 
-<!-- Modal: подробный график спидтеста -->
 <div class="modal modal-blur fade" id="speedtestModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
@@ -163,10 +294,8 @@
       </div>
     </div>
   </div>
-  
 </div>
 
-<!-- Modal: выполнение теста скорости -->
 <div class="modal modal-blur fade" id="speedtestRunningModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -191,17 +320,15 @@
 <script>
   const CHART_DATA = JSON.parse(document.getElementById('chart-data').textContent);
   document.addEventListener('DOMContentLoaded', async () => {
-    // Soft-select helpers (как в Ключах)
-    function buildSoftSelect(selectEl, toggleEl, menuEl, placeholder){
+    function buildSoftSelect(selectEl, toggleEl, menuEl, placeholder) {
       if (!selectEl || !toggleEl || !menuEl) return;
-      // Render items
       menuEl.innerHTML = '';
       const opts = Array.from(selectEl.options || []);
       opts.forEach(opt => {
         const div = document.createElement('div');
         div.className = 'soft-select-item' + (opt.selected ? ' is-active' : '');
         div.dataset.value = opt.value;
-        div.innerHTML = `<span style="opacity:.75">${opt.textContent||''}</span> <span class="ms-1 text-warning">⚡</span>`;
+        div.innerHTML = `<span style="opacity:.75">${opt.textContent || ''}</span> <span class="ms-1 text-info">●</span>`;
         div.addEventListener('click', () => {
           selectEl.value = opt.value;
           menuEl.querySelectorAll('.soft-select-item').forEach(el => el.classList.remove('is-active'));
@@ -212,150 +339,251 @@
         });
         menuEl.appendChild(div);
       });
-      const selOpt = opts.find(o => o.selected) || opts[0];
-      toggleEl.textContent = (selOpt && selOpt.textContent) || placeholder || '';
+      const selectedOption = opts.find(o => o.selected) || opts[0];
+      toggleEl.textContent = (selectedOption && selectedOption.textContent) || placeholder || '';
       const wrap = toggleEl.closest('.soft-select');
-      function placeMenu(){
-        const r = toggleEl.getBoundingClientRect();
+
+      function placeMenu() {
+        const rect = toggleEl.getBoundingClientRect();
         menuEl.style.position = 'fixed';
-        menuEl.style.left = `${Math.round(r.left)}px`;
-        menuEl.style.top = `${Math.round(r.bottom + 6)}px`;
-        menuEl.style.width = `${Math.round(r.width)}px`;
+        menuEl.style.left = `${Math.round(rect.left)}px`;
+        menuEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+        menuEl.style.width = `${Math.round(rect.width)}px`;
         menuEl.style.zIndex = '1065';
       }
-      function openMenu(){
+
+      function openMenu() {
         if (menuEl.parentElement !== document.body) document.body.appendChild(menuEl);
         placeMenu();
         wrap.classList.add('open');
-        menuEl.style.display='block';
+        menuEl.style.display = 'block';
         window.addEventListener('scroll', placeMenu, true);
         window.addEventListener('resize', placeMenu, true);
       }
-      function closeMenu(){
+
+      function closeMenu() {
         wrap.classList.remove('open');
-        menuEl.style.display='none';
+        menuEl.style.display = 'none';
         if (menuEl.parentElement === document.body) wrap.appendChild(menuEl);
         window.removeEventListener('scroll', placeMenu, true);
         window.removeEventListener('resize', placeMenu, true);
       }
-      toggleEl.onclick = (e)=>{ e.stopPropagation(); if (wrap.classList.contains('open')) closeMenu(); else openMenu(); };
-      document.addEventListener('click', (e)=>{ if (!wrap.contains(e.target)) closeMenu(); });
-      document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') closeMenu(); });
+
+      toggleEl.onclick = (event) => {
+        event.stopPropagation();
+        if (wrap.classList.contains('open')) closeMenu(); else openMenu();
+      };
+      document.addEventListener('click', (event) => {
+        if (!wrap.contains(event.target)) closeMenu();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeMenu();
+      });
     }
-    function initSoftSelect(selectId, placeholder){
-      const sel = document.getElementById(selectId);
+
+    function initSoftSelect(selectId, placeholder) {
+      const select = document.getElementById(selectId);
       const wrap = document.querySelector(`.soft-select[data-target="${selectId}"]`);
-      if (!sel || !wrap) return;
+      if (!select || !wrap) return;
       const toggle = wrap.querySelector('.soft-select-toggle');
       const menu = wrap.querySelector('.soft-select-menu');
-      buildSoftSelect(sel, toggle, menu, placeholder);
-      sel.addEventListener('change', ()=> buildSoftSelect(sel, toggle, menu, placeholder));
+      buildSoftSelect(select, toggle, menu, placeholder);
+      select.addEventListener('change', () => buildSoftSelect(select, toggle, menu, placeholder));
     }
-    // Top compact block logic
+
     const hostSelect = document.getElementById('st-host');
     const latestBox = document.getElementById('st-latest');
     const topCanvas = document.getElementById('st-top-canvas');
     const runForm = document.getElementById('st-run-form');
     let topChart = null;
 
-    async function loadAndDrawTop(){
+    async function loadAndDrawTop() {
       if (!hostSelect || !topCanvas) return;
       const host = hostSelect.value;
       const url = `{{ url_for('host_speedtests_json', host_name='__HOST__') }}`.replace('__HOST__', encodeURIComponent(host));
       try {
-        const resp = await fetch(url + '?limit=60', {headers: {'Accept': 'application/json'}});
+        const resp = await fetch(url + '?limit=60', { headers: { 'Accept': 'application/json' } });
         const data = await resp.json();
         if (!data || !data.ok) return;
-        const items = (data.items||[]).slice().reverse();
-        // latest line
-        if (items.length){
-          const last = items[items.length-1];
+        const items = (data.items || []).slice().reverse();
+        if (items.length) {
+          const last = items[items.length - 1];
           const parts = [];
-          if (last.method) parts.push(`<span class='badge bg-blue-lt'>${String(last.method).toUpperCase()}</span>`);
-          parts.push(`⏱ ${last.ping_ms ?? '—'} ms`);
+          if (last.method) parts.push(`<span class="badge bg-blue-lt">${String(last.method).toUpperCase()}</span>`);
+          parts.push(`ping ${last.ping_ms ?? '—'} ms`);
           parts.push(`↓ ${last.download_mbps ?? '—'} Mbps`);
           parts.push(`↑ ${last.upload_mbps ?? '—'} Mbps`);
-          if (last.server_name) parts.push(`📍 ${last.server_name}`);
-          parts.push(`<span class='text-secondary'>${last.created_at}</span>`);
+          if (last.server_name) parts.push(`${last.server_name}`);
+          parts.push(`<span class="text-secondary">${last.created_at}</span>`);
           if (latestBox) latestBox.innerHTML = parts.join(' · ');
-        } else {
-          if (latestBox) latestBox.textContent = 'Нет данных';
+        } else if (latestBox) {
+          latestBox.textContent = 'Нет данных';
         }
-        // chart
+
         const labels = items.map(it => it.created_at);
-        const series = items.map(it => Number(it.download_mbps || 0));
+        const seriesDown = items.map(it => Number(it.download_mbps || 0));
         const seriesUp = items.map(it => Number(it.upload_mbps || 0));
         const ctx = topCanvas.getContext('2d');
         if (topChart) topChart.destroy();
         topChart = new Chart(ctx, {
           type: 'line',
-          data: { labels, datasets: [
-            {
-              label: 'Download Mbps', data: series,
-              borderColor: '#206bc4', backgroundColor: 'rgba(32,107,196,0.08)',
-              borderWidth: 2, fill: true, tension: 0.3, pointRadius: 0
-            },
-            {
-              label: 'Upload Mbps', data: seriesUp,
-              borderColor: '#2fb344', backgroundColor: 'rgba(47,179,68,0.08)',
-              borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0
-            }
-          ]},
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Download Mbps',
+                data: seriesDown,
+                borderColor: '#1580ff',
+                backgroundColor: 'rgba(21,128,255,0.10)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0
+              },
+              {
+                label: 'Upload Mbps',
+                data: seriesUp,
+                borderColor: '#21c06a',
+                backgroundColor: 'rgba(33,192,106,0.08)',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.3,
+                pointRadius: 0
+              }
+            ]
+          },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: {display: true}, tooltip: {enabled: true, mode: 'nearest', intersect: false},
-              zoom: { zoom: { wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x' }, pan: { enabled: true, mode: 'x' } }
+              legend: { display: true },
+              tooltip: { enabled: true, mode: 'nearest', intersect: false },
+              zoom: {
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                pan: { enabled: true, mode: 'x' }
+              }
             },
-            scales: { x: { display: true, ticks: { maxTicksLimit: 10 } }, y: { display: true, beginAtZero: true } }
+            scales: {
+              x: { display: true, ticks: { maxTicksLimit: 10 } },
+              y: { display: true, beginAtZero: true }
+            }
           }
         });
-      } catch(e) {}
+      } catch (_) {}
     }
+
     if (hostSelect) {
       initSoftSelect('st-host', 'Выберите хост...');
       hostSelect.addEventListener('change', loadAndDrawTop);
       await loadAndDrawTop();
     }
-    function showRunning(){
-      try { new bootstrap.Modal(document.getElementById('speedtestRunningModal'), {backdrop:'static', keyboard:false}).show(); } catch(_){}
+
+    function showRunning() {
+      try { new bootstrap.Modal(document.getElementById('speedtestRunningModal'), { backdrop: 'static', keyboard: false }).show(); } catch (_) {}
     }
-    function hideRunning(){
-      try { bootstrap.Modal.getInstance(document.getElementById('speedtestRunningModal'))?.hide(); } catch(_){}
+
+    function hideRunning() {
+      try { bootstrap.Modal.getInstance(document.getElementById('speedtestRunningModal'))?.hide(); } catch (_) {}
     }
 
     if (runForm && hostSelect) {
-      runForm.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
+      runForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
         const host = hostSelect.value;
-        const fd = new FormData(runForm);
+        const formData = new FormData(runForm);
         try {
           showRunning();
-          const resp = await fetch(`{{ url_for('run_host_speedtest_route', host_name='__HOST__') }}`.replace('__HOST__', encodeURIComponent(host)), {
-            method: 'POST', body: fd, credentials: 'same-origin'
+          await fetch(`{{ url_for('run_host_speedtest_route', host_name='__HOST__') }}`.replace('__HOST__', encodeURIComponent(host)), {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
           });
-          // после выполнения — перерисуем
-          setTimeout(async ()=>{ await loadAndDrawTop(); hideRunning(); }, 800);
-        } catch(_){}
+          setTimeout(async () => { await loadAndDrawTop(); hideRunning(); }, 800);
+        } catch (_) {}
       });
     }
 
-    // Intercept "run for all"
     const runAllForm = document.getElementById('st-run-all-form');
     if (runAllForm) {
-      runAllForm.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(runAllForm);
+      runAllForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(runAllForm);
         try {
           showRunning();
-          const resp = await fetch(runAllForm.action, { method: 'POST', body: fd, credentials: 'same-origin' });
-          setTimeout(async ()=>{ await loadAndDrawTop(); hideRunning(); }, 1200);
-        } catch(_){}
+          await fetch(runAllForm.action, { method: 'POST', body: formData, credentials: 'same-origin' });
+          setTimeout(async () => { await loadAndDrawTop(); hideRunning(); }, 1200);
+        } catch (_) {}
       });
     }
 
-    // Detailed modal logic
+    function prepareDailySeries(dataMap) {
+      const labels = [];
+      const values = [];
+      const today = new Date();
+      const source = dataMap || {};
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const isoDate = date.toISOString().split('T')[0];
+        const label = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        labels.push(label);
+        values.push(Number(source[isoDate] || 0));
+      }
+      return { labels, values };
+    }
+
+    function createDailyChart(canvasId, dataMap, chartLabel, color, fillColor) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const { labels, values } = prepareDailySeries(dataMap);
+      const ctx = canvas.getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: chartLabel,
+            data: values,
+            borderColor: color,
+            backgroundColor: fillColor,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                maxTicksLimit: window.innerWidth <= 768 ? 8 : 14
+              }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                precision: 0
+              }
+            }
+          }
+        }
+      });
+    }
+
+    createDailyChart('newUsersChart', (CHART_DATA && CHART_DATA.users) || {}, 'Новые пользователи', '#1580ff', 'rgba(21,128,255,0.12)');
+    createDailyChart('newKeysChart', (CHART_DATA && CHART_DATA.keys) || {}, 'Новые ключи', '#21c06a', 'rgba(33,192,106,0.10)');
+
     const modalEl = document.getElementById('speedtestModal');
     const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
     const titleHost = document.getElementById('st-modal-host');
@@ -364,48 +592,50 @@
     const refreshBtn = document.getElementById('st-refresh');
     const detailCanvas = document.getElementById('st-detail-canvas');
     let detailChart = null;
-    let currentHost = null;
     let currentUrl = null;
 
-    window.openSpeedtestModal = async function(host, url){
-      currentHost = host; currentUrl = url;
+    window.openSpeedtestModal = async function(host, url) {
+      currentUrl = url;
       if (titleHost) titleHost.textContent = host;
       if (modal) modal.show();
       await drawDetail();
     };
 
-    async function drawDetail(){
-      if (!detailCanvas) return;
+    async function drawDetail() {
+      if (!detailCanvas || !currentUrl) return;
       const metric = metricEl.value || 'download_mbps';
-      const limit = parseInt(rangeEl.value||'60', 10);
+      const limit = parseInt(rangeEl.value || '60', 10);
       try {
-        const resp = await fetch(currentUrl + '?limit=' + limit, {headers: {'Accept': 'application/json'}});
+        const resp = await fetch(currentUrl + '?limit=' + limit, { headers: { 'Accept': 'application/json' } });
         const data = await resp.json();
         if (!data || !data.ok) return;
         const items = (data.items || []).slice().reverse();
         const labels = items.map(it => it.created_at);
         const series = items.map(it => Number(it[metric] || 0));
         const ctx = detailCanvas.getContext('2d');
-        if (detailChart) { detailChart.destroy(); }
+        if (detailChart) detailChart.destroy();
         detailChart = new Chart(ctx, {
           type: 'line',
-          data: { labels, datasets: [{
-            label: metric,
-            data: series,
-            borderColor: metric === 'ping_ms' ? '#e67e22' : (metric === 'upload_mbps' ? '#2fb344' : '#206bc4'),
-            backgroundColor: 'rgba(32,107,196,0.08)',
-            borderWidth: 2,
-            fill: true,
-            tension: 0.3,
-            pointRadius: 2,
-          }]},
+          data: {
+            labels,
+            datasets: [{
+              label: metric,
+              data: series,
+              borderColor: metric === 'ping_ms' ? '#ffb347' : (metric === 'upload_mbps' ? '#21c06a' : '#1580ff'),
+              backgroundColor: 'rgba(21,128,255,0.10)',
+              borderWidth: 2,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2
+            }]
+          },
           options: {
             responsive: true,
             plugins: {
-              legend: {display: false},
-              tooltip: {enabled: true, mode: 'index', intersect: false},
+              legend: { display: false },
+              tooltip: { enabled: true, mode: 'index', intersect: false },
               zoom: {
-                zoom: { wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
                 pan: { enabled: true, mode: 'x' }
               }
             },
@@ -416,28 +646,13 @@
             }
           }
         });
-      } catch(e) {}
+      } catch (_) {}
     }
+
     if (refreshBtn) refreshBtn.addEventListener('click', drawDetail);
     if (metricEl) metricEl.addEventListener('change', drawDetail);
     if (rangeEl) rangeEl.addEventListener('change', drawDetail);
   });
 </script>
-
-<!-- Add a centered modal with animated spinner -->
-<div class="modal fade" id="speedtestRunningModal" tabindex="-1" aria-labelledby="speedtestRunningModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="speedtestRunningModalLabel">Speedtest in progress...</h5>
-      </div>
-      <div class="modal-body text-center">
-        <div class="spinner-border" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 {% endblock %}
