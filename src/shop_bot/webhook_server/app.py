@@ -336,7 +336,7 @@ def create_webhook_app(bot_controller_instance):
             "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
             "confirmation": {"type": "redirect", "return_url": return_url},
             "capture": True,
-            "description": f"VimoVpn timed access {duration_minutes} min",
+            "description": f"VimoVPN timed access {duration_minutes} min",
             "metadata": {
                 "action": "instant_access",
                 "payment_id": payment_id,
@@ -369,7 +369,7 @@ def create_webhook_app(bot_controller_instance):
             currency_type="fiat",
             fiat="RUB",
             amount=float(amount),
-            description=f"VimoVpn timed access {duration_minutes} min",
+            description=f"VimoVPN timed access {duration_minutes} min",
             payload=payment_id,
             expires_in=3600,
         )
@@ -394,7 +394,7 @@ def create_webhook_app(bot_controller_instance):
             "token": token,
             "amount": float(amount),
             "order_id": payment_id,
-            "description": f"VimoVpn timed access {duration_minutes} min",
+            "description": f"VimoVPN timed access {duration_minutes} min",
             "redirect_url": return_url,
         }
         response_data = await handlers._request_caktuspay_api("create", payload)
@@ -466,7 +466,7 @@ def create_webhook_app(bot_controller_instance):
             amount=float(amount),
             label=payment_id,
             success_url=return_url,
-            targets=f"VimoVpn timed access {duration_minutes} min",
+            targets=f"VimoVPN timed access {duration_minutes} min",
         )
         return (str(pay_url) if pay_url else None, None)
 
@@ -638,7 +638,7 @@ def create_webhook_app(bot_controller_instance):
             )
         order_payload = _serialize_instant_access_order(order)
         return {
-            "page_title": "VimoVpn",
+            "page_title": "VimoVPN",
             "landing_enabled": bool(config["enabled"] and config["host"]),
             "landing_host": config["host_name"],
             "duration_options": duration_options,

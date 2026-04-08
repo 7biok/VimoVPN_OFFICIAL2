@@ -3,8 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ page_title or 'VimoVpn' }}</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}">
+    <title>{{ page_title or 'VimoVPN' }}</title>
     <style>
         :root {
             --bg:#07090d; --panel:rgba(9,13,20,.86); --line:rgba(255,255,255,.08);
@@ -23,11 +22,12 @@
             background-size:cover,cover,cover;
             background-attachment:fixed;
         }
-        .wrap{width:min(1180px,calc(100vw - 24px));margin:0 auto;padding:22px 0 48px}
+        a,a:hover,a:focus,a:active{text-decoration:none}
+        @keyframes landingRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+        .wrap{width:min(1180px,calc(100vw - 24px));margin:0 auto;padding:22px 0 48px;animation:landingRise .35s ease-out both}
         .topbar,.cta-row,.method-list,.button-row,.benefit-grid{display:flex;gap:12px;flex-wrap:wrap}
         .topbar{justify-content:space-between;align-items:center;margin-bottom:22px}
         .brand-mini{display:flex;gap:12px;align-items:center;color:var(--text);text-decoration:none}
-        .brand-mini img{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 14px 32px rgba(21,128,255,.24))}
         .brand-mini strong{display:block;font-size:1.05rem} .brand-mini span{display:block;color:var(--muted);font-size:.92rem}
         .btn,.method-button{appearance:none;border:0;border-radius:999px;cursor:pointer;text-decoration:none;font:inherit;font-weight:750;color:var(--text);transition:.16s}
         .btn:hover,.method-button:hover{transform:translateY(-1px);filter:brightness(1.05)}
@@ -35,10 +35,10 @@
         .btn.secondary{background:rgba(255,255,255,.06);border:1px solid var(--line)}
         .btn,.method-button{min-height:46px;padding:0 18px;display:inline-flex;align-items:center;justify-content:center}
         .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:22px}
-        .panel{background:linear-gradient(180deg,rgba(11,15,23,.9),rgba(6,10,17,.95));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+        .panel{background:linear-gradient(180deg,rgba(11,15,23,.9),rgba(6,10,17,.95));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+        .panel:hover{transform:translateY(-2px);border-color:rgba(21,128,255,.2);box-shadow:0 36px 95px rgba(0,0,0,.46)}
         .hero-main{padding:40px 36px;min-height:760px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;position:relative}
         .hero-main:before{content:"";position:absolute;inset:25% 15% auto;height:230px;background:radial-gradient(circle,rgba(20,129,255,.22),transparent 68%);filter:blur(16px)}
-        .hero-main img{position:relative;width:min(290px,56vw);margin:0 auto 18px;filter:drop-shadow(0 22px 68px rgba(10,120,255,.26))}
         .word{position:relative;margin:0;font-size:clamp(3.8rem,8vw,7rem);line-height:.88;font-weight:800;letter-spacing:-.055em}
         .lead{position:relative;max-width:620px;margin:18px auto 0;color:var(--muted);line-height:1.72;font-size:1.06rem}
         .info-grid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:30px;width:100%}
@@ -76,14 +76,14 @@
             .hero-main,.purchase,.section{padding:20px} .info-grid,.benefit-grid,.stats{grid-template-columns:1fr}
             .cta-row,.method-list,.button-row{flex-direction:column}.btn,.method-button{width:100%}
         }
+        @media (prefers-reduced-motion:reduce){.wrap{animation:none}.panel,.btn,.method-button{transition:none}.panel:hover,.btn:hover,.method-button:hover{transform:none}}
     </style>
 </head>
 <body>
     <div class="wrap">
         <div class="topbar">
             <a class="brand-mini" href="{{ url_for('index') }}">
-                <img src="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" alt="VimoVpn">
-                <span><strong>VimoVpn</strong><span>Быстрый доступ и Telegram-управление</span></span>
+                <span><strong>VimoVPN</strong><span>Быстрый доступ и Telegram-управление</span></span>
             </a>
             <div class="cta-row">
                 {% if telegram_bot_username %}
@@ -95,8 +95,7 @@
 
         <div class="hero">
             <section class="panel hero-main">
-                <img src="{{ url_for('static', filename='img/vimovpn-logo.svg') }}" alt="VimoVpn logo">
-                <h1 class="word">VimoVpn</h1>
+                <h1 class="word">VimoVPN</h1>
                 <p class="lead">
                     Главная страница сервиса и быстрый вход в VPN в одном месте: переход в Telegram-бота для полноценного профиля или мгновенная покупка доступа на 30 или 60 минут.
                 </p>

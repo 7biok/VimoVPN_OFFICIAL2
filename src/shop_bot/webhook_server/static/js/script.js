@@ -679,7 +679,46 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch(_) {}
     }
 
+    function initializeUiMotion() {
+        const body = document.body;
+        if (!body) return;
+
+        const staggerTargets = document.querySelectorAll('.admin-sidebar__panel, .admin-main__inner > *');
+        staggerTargets.forEach((node, index) => {
+            node.style.setProperty('--ui-stagger', String(Math.min(index, 10)));
+        });
+
+        const interactiveSelector = 'a, button, .btn, [role="button"]';
+        let pressedNode = null;
+
+        function clearPressedNode() {
+            if (pressedNode) {
+                pressedNode.classList.remove('ui-pressed');
+                pressedNode = null;
+            }
+        }
+
+        document.addEventListener('pointerdown', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const node = target.closest(interactiveSelector);
+            if (!node || node.hasAttribute('disabled') || node.getAttribute('aria-disabled') === 'true') return;
+            if (pressedNode && pressedNode !== node) {
+                pressedNode.classList.remove('ui-pressed');
+            }
+            pressedNode = node;
+            pressedNode.classList.add('ui-pressed');
+        });
+
+        document.addEventListener('pointerup', clearPressedNode);
+        document.addEventListener('pointercancel', clearPressedNode);
+        window.addEventListener('blur', clearPressedNode);
+
+        requestAnimationFrame(() => body.classList.add('ui-ready'));
+    }
+
     // Initialize modules once DOM is ready
+    initializeUiMotion();
     initTooltipsWithin(document);
     initializePasswordToggles();
     setupBotControlForms();

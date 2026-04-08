@@ -4,9 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Панель управления ботом{% endblock %}</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
-    <link rel="shortcut icon" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
     <meta name="theme-color" content="#1580ff" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
@@ -30,11 +27,8 @@
           </button>
 
           <a href="{{ url_for('dashboard_page') }}" class="admin-brand">
-            <span class="admin-brand__logo">
-              <img src="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" alt="VimoVpn" />
-            </span>
             <span class="admin-brand__copy">
-              <strong id="brand-title">{{ brand_title or 'VimoVpn' }}</strong>
+              <strong id="brand-title">{{ brand_title or 'VimoVPN' }}</strong>
               <span>Control Center</span>
             </span>
           </a>
