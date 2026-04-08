@@ -5,549 +5,167 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title or 'VimoVpn' }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}">
     <style>
         :root {
-            --bg: #06080d;
-            --panel: rgba(10, 15, 24, 0.82);
-            --panel-strong: rgba(8, 12, 20, 0.94);
-            --line: rgba(255, 255, 255, 0.08);
-            --text: #f5f7fb;
-            --muted: rgba(245, 247, 251, 0.7);
-            --blue: #1580ff;
-            --green: #21c06a;
-            --amber: #ffb347;
-            --red: #ff6f7d;
-            --shadow: 0 32px 100px rgba(0, 0, 0, 0.45);
-            --radius-xl: 30px;
-            --radius-lg: 22px;
-            --radius-md: 16px;
-            --font-ui: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+            --bg:#07090d; --panel:rgba(9,13,20,.86); --line:rgba(255,255,255,.08);
+            --text:#f5f7fb; --muted:rgba(245,247,251,.72); --blue:#1580ff; --blue2:#0b63d8;
+            --green:#21c06a; --amber:#ffb347; --red:#ff6f7d; --radius:26px; --radius2:18px;
+            --shadow:0 30px 90px rgba(0,0,0,.42);
         }
-
-        * { box-sizing: border-box; }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: var(--font-ui);
-            color: var(--text);
+        *{box-sizing:border-box} html{scroll-behavior:smooth}
+        body{
+            margin:0;color:var(--text);font-family:"Bahnschrift","Segoe UI Variable Display","Segoe UI",sans-serif;min-height:100vh;
             background:
-                radial-gradient(circle at 50% 102%, rgba(16, 109, 237, 0.58), transparent 36%),
-                radial-gradient(circle at 50% 82%, rgba(16, 109, 237, 0.18), transparent 28%),
-                linear-gradient(180deg, #090a0d 0%, #070a11 55%, #091529 100%);
-            overflow-x: hidden;
+                radial-gradient(circle at 50% 102%, rgba(16,109,237,.58), transparent 36%),
+                radial-gradient(circle at 50% 82%, rgba(16,109,237,.18), transparent 28%),
+                linear-gradient(180deg,#090a0d 0%,#070a11 56%,#091529 100%);
         }
-
-        body::before,
-        body::after {
-            content: "";
-            position: fixed;
-            border-radius: 999px;
-            filter: blur(70px);
-            pointer-events: none;
-            opacity: 0.9;
-        }
-
-        body::before {
-            width: 28rem;
-            height: 28rem;
-            left: 50%;
-            bottom: -10rem;
-            transform: translateX(-50%);
-            background: rgba(24, 124, 255, 0.34);
-        }
-
-        body::after {
-            width: 18rem;
-            height: 18rem;
-            right: -6rem;
-            top: 8rem;
-            background: rgba(14, 92, 198, 0.18);
-        }
-
-        .landing-shell {
-            position: relative;
-            width: min(1180px, calc(100vw - 32px));
-            margin: 0 auto;
-            padding: 38px 0 56px;
-        }
-
-        .topbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 24px;
-            color: var(--muted);
-            font-size: 0.95rem;
-        }
-
-        .topbar a {
-            color: var(--text);
-            text-decoration: none;
-            border: 1px solid var(--line);
-            padding: 10px 14px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.04);
-        }
-
-        .layout {
-            display: grid;
-            grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
-            gap: 24px;
-            align-items: stretch;
-        }
-
-        .brand-panel,
-        .action-panel {
-            position: relative;
-            background: linear-gradient(180deg, rgba(11, 15, 23, 0.88), rgba(6, 10, 17, 0.94));
-            border: 1px solid var(--line);
-            border-radius: var(--radius-xl);
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(20px);
-        }
-
-        .brand-panel {
-            min-height: 760px;
-            padding: 42px 42px 34px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            overflow: hidden;
-        }
-
-        .brand-panel::before {
-            content: "";
-            position: absolute;
-            inset: 22% 14% auto;
-            height: 220px;
-            background: radial-gradient(circle, rgba(20, 129, 255, 0.22), transparent 68%);
-            filter: blur(12px);
-        }
-
-        .brand-logo {
-            position: relative;
-            width: min(280px, 55vw);
-            max-width: 280px;
-            display: block;
-            margin-bottom: 22px;
-            filter: drop-shadow(0 18px 60px rgba(10, 120, 255, 0.25));
-            animation: floatIn 800ms ease-out both;
-        }
-
-        .brand-wordmark {
-            position: relative;
-            margin: 0;
-            font-size: clamp(3.6rem, 8vw, 7rem);
-            line-height: 0.9;
-            font-weight: 800;
-            letter-spacing: -0.05em;
-            animation: riseIn 860ms ease-out both;
-        }
-
-        .brand-subtitle {
-            position: relative;
-            max-width: 560px;
-            margin: 20px auto 0;
-            color: var(--muted);
-            font-size: 1.08rem;
-            line-height: 1.7;
-        }
-
-        .brand-meta {
-            position: relative;
-            width: 100%;
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-            margin-top: 36px;
-        }
-
-        .meta-card {
-            padding: 16px 18px;
-            border-radius: var(--radius-md);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            background: rgba(255, 255, 255, 0.03);
-            text-align: left;
-        }
-
-        .meta-card strong {
-            display: block;
-            font-size: 1.05rem;
-            margin-bottom: 6px;
-        }
-
-        .meta-card span {
-            color: var(--muted);
-            font-size: 0.94rem;
-            line-height: 1.45;
-        }
-
-        .action-panel {
-            padding: 28px;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .panel-header h1 {
-            margin: 0;
-            font-size: clamp(1.8rem, 2.8vw, 2.4rem);
-            letter-spacing: -0.04em;
-        }
-
-        .panel-header p {
-            margin: 10px 0 0;
-            color: var(--muted);
-            line-height: 1.6;
-        }
-
-        .flash-stack {
-            display: grid;
-            gap: 10px;
-        }
-
-        .flash {
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .flash.success { border-color: rgba(33, 192, 106, 0.4); background: rgba(33, 192, 106, 0.12); }
-        .flash.warning { border-color: rgba(255, 179, 71, 0.4); background: rgba(255, 179, 71, 0.12); }
-        .flash.danger  { border-color: rgba(255, 111, 125, 0.42); background: rgba(255, 111, 125, 0.12); }
-        .flash.info    { border-color: rgba(21, 128, 255, 0.38); background: rgba(21, 128, 255, 0.12); }
-
-        .purchase-grid {
-            display: grid;
-            gap: 16px;
-        }
-
-        .duration-card,
-        .status-card {
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--line);
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
-            padding: 20px;
-        }
-
-        .duration-top,
-        .status-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 14px;
-        }
-
-        .duration-title,
-        .status-title {
-            margin: 0;
-            font-size: 1.24rem;
-            font-weight: 750;
-        }
-
-        .duration-note,
-        .status-note {
-            margin-top: 6px;
-            color: var(--muted);
-            line-height: 1.55;
-            font-size: 0.95rem;
-        }
-
-        .price-pill,
-        .status-pill {
-            flex-shrink: 0;
-            padding: 10px 14px;
-            border-radius: 999px;
-            font-size: 0.92rem;
-            border: 1px solid rgba(21, 128, 255, 0.36);
-            background: rgba(21, 128, 255, 0.12);
-        }
-
-        .status-pill.ready,
-        .status-pill.bound { border-color: rgba(33, 192, 106, 0.36); background: rgba(33, 192, 106, 0.14); }
-        .status-pill.processing { border-color: rgba(255, 179, 71, 0.36); background: rgba(255, 179, 71, 0.12); }
-        .status-pill.failed { border-color: rgba(255, 111, 125, 0.4); background: rgba(255, 111, 125, 0.12); }
-
-        .method-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 18px;
-        }
-
-        .method-form { margin: 0; }
-
-        .method-button,
-        .primary-button,
-        .secondary-button,
-        .copy-button {
-            appearance: none;
-            border: 0;
-            border-radius: 999px;
-            cursor: pointer;
-            font-family: inherit;
-            font-weight: 700;
-            transition: transform 160ms ease, filter 160ms ease, background 160ms ease;
-        }
-
-        .method-button {
-            padding: 13px 18px;
-            color: var(--text);
-            background: linear-gradient(180deg, rgba(20, 128, 255, 0.96), rgba(11, 92, 206, 0.95));
-            box-shadow: 0 18px 40px rgba(11, 92, 206, 0.24);
-        }
-
-        .method-button:hover,
-        .primary-button:hover,
-        .secondary-button:hover,
-        .copy-button:hover { transform: translateY(-1px); filter: brightness(1.05); }
-
-        .method-button:disabled {
-            cursor: default;
-            transform: none;
-            background: rgba(255, 255, 255, 0.08);
-            color: rgba(255, 255, 255, 0.55);
-            box-shadow: none;
-        }
-
-        .method-icon {
-            margin-right: 8px;
-            opacity: 0.86;
-        }
-
-        .status-grid { display: grid; gap: 14px; }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .info-card {
-            padding: 14px 16px;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        .info-label {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 0.82rem;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .info-value {
-            font-size: 1rem;
-            font-weight: 700;
-            word-break: break-word;
-        }
-
-        .code-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 12px 16px;
-            border-radius: 16px;
-            border: 1px solid rgba(21, 128, 255, 0.34);
-            background: rgba(21, 128, 255, 0.12);
-            font-size: 1.1rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-        }
-
-        .key-box {
-            width: 100%;
-            min-height: 124px;
-            resize: vertical;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 18px;
-            padding: 14px 16px;
-            font: 500 0.94rem/1.55 "Consolas", "Courier New", monospace;
-            color: var(--text);
-            background: rgba(4, 8, 14, 0.82);
-        }
-
-        .button-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .primary-button,
-        .secondary-button,
-        .copy-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 48px;
-            padding: 0 18px;
-            text-decoration: none;
-            color: var(--text);
-        }
-
-        .primary-button {
-            background: linear-gradient(180deg, rgba(20, 128, 255, 0.98), rgba(8, 89, 194, 0.96));
-            box-shadow: 0 18px 40px rgba(11, 92, 206, 0.25);
-        }
-
-        .secondary-button,
-        .copy-button {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .hint-box {
-            padding: 16px 18px;
-            border-radius: 18px;
-            border: 1px dashed rgba(255, 255, 255, 0.12);
-            background: rgba(255, 255, 255, 0.025);
-            color: var(--muted);
-            line-height: 1.65;
-        }
-
-        .disabled-box {
-            padding: 20px;
-            border-radius: var(--radius-lg);
-            border: 1px solid rgba(255, 111, 125, 0.16);
-            background: rgba(255, 111, 125, 0.08);
-            color: #ffd8dc;
-            line-height: 1.6;
-        }
-
-        .small-note {
-            color: var(--muted);
-            font-size: 0.92rem;
-            line-height: 1.6;
-        }
-
-        @keyframes riseIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes floatIn {
-            from { opacity: 0; transform: translateY(30px) scale(0.96); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        @media (max-width: 980px) {
-            .landing-shell { width: min(100vw - 24px, 980px); padding-top: 18px; }
-            .layout { grid-template-columns: 1fr; }
-            .brand-panel { min-height: auto; padding: 34px 24px 28px; }
-            .brand-meta { grid-template-columns: 1fr; }
-        }
-
-        @media (max-width: 680px) {
-            .topbar { flex-direction: column; align-items: flex-start; }
-            .action-panel { padding: 18px; }
-            .info-grid { grid-template-columns: 1fr; }
-            .duration-top, .status-top { flex-direction: column; }
-            .brand-wordmark { font-size: clamp(3rem, 18vw, 5.2rem); }
-            .method-list, .button-row { flex-direction: column; }
-            .method-form { width: 100%; }
-            .method-button, .primary-button, .secondary-button, .copy-button { width: 100%; }
+        .wrap{width:min(1180px,calc(100vw - 24px));margin:0 auto;padding:22px 0 48px}
+        .topbar,.cta-row,.method-list,.button-row,.benefit-grid{display:flex;gap:12px;flex-wrap:wrap}
+        .topbar{justify-content:space-between;align-items:center;margin-bottom:22px}
+        .brand-mini{display:flex;gap:12px;align-items:center;color:var(--text);text-decoration:none}
+        .brand-mini img{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 14px 32px rgba(21,128,255,.24))}
+        .brand-mini strong{display:block;font-size:1.05rem} .brand-mini span{display:block;color:var(--muted);font-size:.92rem}
+        .btn,.method-button{appearance:none;border:0;border-radius:999px;cursor:pointer;text-decoration:none;font:inherit;font-weight:750;color:var(--text);transition:.16s}
+        .btn:hover,.method-button:hover{transform:translateY(-1px);filter:brightness(1.05)}
+        .btn.primary,.method-button{background:linear-gradient(180deg,rgba(20,128,255,.98),rgba(8,89,194,.96));box-shadow:0 18px 40px rgba(11,92,206,.24)}
+        .btn.secondary{background:rgba(255,255,255,.06);border:1px solid var(--line)}
+        .btn,.method-button{min-height:46px;padding:0 18px;display:inline-flex;align-items:center;justify-content:center}
+        .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);gap:22px}
+        .panel{background:linear-gradient(180deg,rgba(11,15,23,.9),rgba(6,10,17,.95));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+        .hero-main{padding:40px 36px;min-height:760px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;position:relative}
+        .hero-main:before{content:"";position:absolute;inset:25% 15% auto;height:230px;background:radial-gradient(circle,rgba(20,129,255,.22),transparent 68%);filter:blur(16px)}
+        .hero-main img{position:relative;width:min(290px,56vw);margin:0 auto 18px;filter:drop-shadow(0 22px 68px rgba(10,120,255,.26))}
+        .word{position:relative;margin:0;font-size:clamp(3.8rem,8vw,7rem);line-height:.88;font-weight:800;letter-spacing:-.055em}
+        .lead{position:relative;max-width:620px;margin:18px auto 0;color:var(--muted);line-height:1.72;font-size:1.06rem}
+        .info-grid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:30px;width:100%}
+        .card,.mini-card{padding:16px 18px;border:1px solid rgba(255,255,255,.07);border-radius:var(--radius2);background:rgba(255,255,255,.03)}
+        .card strong{display:block;margin-bottom:6px;font-size:1.03rem} .card span{display:block;color:var(--muted);line-height:1.55;font-size:.94rem}
+        .purchase{padding:28px;display:flex;flex-direction:column;gap:16px}
+        .purchase h1,.section h2{margin:0;letter-spacing:-.04em} .purchase p,.section p{margin:10px 0 0;color:var(--muted);line-height:1.62}
+        .flash{padding:14px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.05);margin-bottom:10px}
+        .flash.success{border-color:rgba(33,192,106,.4);background:rgba(33,192,106,.12)}
+        .flash.warning{border-color:rgba(255,179,71,.4);background:rgba(255,179,71,.12)}
+        .flash.danger{border-color:rgba(255,111,125,.42);background:rgba(255,111,125,.12)}
+        .disabled-box{padding:20px;border-radius:20px;border:1px solid rgba(255,111,125,.16);background:rgba(255,111,125,.08);color:#ffd8dc;line-height:1.6}
+        .duration-card,.status-card{padding:20px;border-radius:22px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02))}
+        .duration-card.highlight{border-color:rgba(24,126,255,.28);box-shadow:inset 0 0 0 1px rgba(24,126,255,.18)}
+        .row-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+        .row-head h2{margin:0;font-size:1.22rem}.note{margin-top:6px;color:var(--muted);line-height:1.55;font-size:.95rem}
+        .pill{padding:10px 14px;border-radius:999px;font-size:.92rem;border:1px solid rgba(21,128,255,.36);background:rgba(21,128,255,.12)}
+        .status-pill.ready,.status-pill.bound{border-color:rgba(33,192,106,.36);background:rgba(33,192,106,.14)}
+        .status-pill.processing{border-color:rgba(255,179,71,.36);background:rgba(255,179,71,.12)}
+        .status-pill.failed{border-color:rgba(255,111,125,.4);background:rgba(255,111,125,.12)}
+        .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+        .mini-card span{display:block;font-size:.82rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+        .mini-card strong{font-size:1rem;word-break:break-word}
+        .timer{font-size:1.2rem}
+        .code{display:inline-flex;padding:12px 16px;border-radius:16px;border:1px solid rgba(21,128,255,.34);background:rgba(21,128,255,.12);font-weight:800;letter-spacing:.08em}
+        textarea.key{width:100%;min-height:122px;resize:vertical;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:14px 16px;background:rgba(4,8,14,.82);color:var(--text);font:500 .94rem/1.55 "Consolas","Courier New",monospace}
+        .hint{padding:16px 18px;border-radius:18px;border:1px dashed rgba(255,255,255,.12);background:rgba(255,255,255,.025);color:var(--muted);line-height:1.65}
+        .section{margin-top:22px;padding:28px}
+        .benefit-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+        .footer-cta{margin-top:20px;padding:18px 20px;border-radius:20px;border:1px solid rgba(21,128,255,.16);background:rgba(21,128,255,.08);display:flex;justify-content:space-between;align-items:center;gap:14px}
+        .footer-cta strong{display:block;font-size:1.08rem;margin-bottom:4px}.footer-cta span{color:var(--muted)}
+        @media (max-width:1040px){.hero{grid-template-columns:1fr}.hero-main{min-height:auto}.info-grid,.benefit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media (max-width:720px){
+            .wrap{width:min(100vw - 18px,720px)} .topbar,.footer-cta,.row-head{flex-direction:column;align-items:flex-start}
+            .hero-main,.purchase,.section{padding:20px} .info-grid,.benefit-grid,.stats{grid-template-columns:1fr}
+            .cta-row,.method-list,.button-row{flex-direction:column}.btn,.method-button{width:100%}
         }
     </style>
 </head>
 <body>
-    <div class="landing-shell">
+    <div class="wrap">
         <div class="topbar">
-            <div>Мгновенный доступ к VPN без регистрации на сайте. После оплаты ключ и код привязки выдаются автоматически.</div>
-            <a href="{{ url_for('admin_index') }}">Админ-панель</a>
+            <a class="brand-mini" href="{{ url_for('index') }}">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn">
+                <span><strong>VimoVpn</strong><span>Быстрый доступ и Telegram-управление</span></span>
+            </a>
+            <div class="cta-row">
+                {% if telegram_bot_username %}
+                    <a class="btn secondary" href="https://t.me/{{ telegram_bot_username }}" target="_blank" rel="noopener">Перейти в бота</a>
+                {% endif %}
+                <a class="btn secondary" href="#quick-buy">Быстрая покупка</a>
+            </div>
         </div>
 
-        <div class="layout">
-            <section class="brand-panel">
-                <img class="brand-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn logo">
-                <h1 class="brand-wordmark">VimoVpn</h1>
-                <p class="brand-subtitle">
-                    Выберите 30 или 60 минут доступа, оплатите удобным способом и получите одноразовый код с готовым VPN-ключом.
-                    Код можно привязать к Telegram через <code>/start</code>, после чего он появится в разделе «Мои ключи».
+        <div class="hero">
+            <section class="panel hero-main">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn logo">
+                <h1 class="word">VimoVpn</h1>
+                <p class="lead">
+                    Главная страница сервиса и быстрый вход в VPN в одном месте: переход в Telegram-бота для полноценного профиля или мгновенная покупка доступа на 30 или 60 минут.
                 </p>
-
-                <div class="brand-meta">
-                    <div class="meta-card">
-                        <strong>1. Выбор времени</strong>
-                        <span>30 или 60 минут доступа с фиксированной ценой и моментальной выдачей.</span>
+                <div class="cta-row" style="justify-content:center;margin-top:28px">
+                    {% if telegram_bot_username %}
+                        <a class="btn primary" href="https://t.me/{{ telegram_bot_username }}" target="_blank" rel="noopener">Открыть Telegram-бота</a>
+                    {% endif %}
+                    <a class="btn secondary" href="#duration-60">Быстро купить 60 минут</a>
+                    <a class="btn secondary" href="#quick-buy">Выбрать способ оплаты</a>
+                </div>
+                {% if instant_access_upgrade_offer %}
+                    <div class="hint" style="margin-top:18px;max-width:620px">
+                        {{ instant_access_upgrade_offer }}
                     </div>
-                    <div class="meta-card">
-                        <strong>2. Оплата</strong>
-                        <span>Поддерживаются все платёжные методы, которые сейчас включены в админке.</span>
-                    </div>
-                    <div class="meta-card">
-                        <strong>3. Привязка к боту</strong>
-                        <span>Один профиль Telegram может привязать сколько угодно временных ключей. Они появятся в «Мои ключи» с датой и временем.</span>
-                    </div>
+                {% endif %}
+                <div class="info-grid">
+                    <div class="card"><strong>Мгновенная выдача</strong><span>После оплаты формируется одноразовый код и готовый VPN-ключ.</span></div>
+                    <div class="card"><strong>Привязка к Telegram</strong><span>Код добавляется в профиль через <code>/start</code>, а ключ попадает в «Мои ключи».</span></div>
+                    <div class="card"><strong>Апгрейд в месяц</strong><span>Быстрый ключ можно продлить на обычный тариф с зачётом или скидкой из админки.</span></div>
                 </div>
             </section>
 
-            <section class="action-panel">
-                <div class="panel-header">
-                    <h1>Мгновенный доступ</h1>
+            <section class="panel purchase" id="quick-buy">
+                <div>
+                    <h1>Быстрый доступ</h1>
                     <p>
-                        {% if landing_host %}
-                            Хост выдачи: <strong>{{ landing_host }}</strong>.
-                        {% endif %}
-                        Сначала формируется одноразовый код, затем после подтверждения оплаты система создаёт VPN-ключ и показывает ссылку для привязки в Telegram.
+                        {% if landing_host %}Хост выдачи: <strong>{{ landing_host }}</strong>. {% endif %}
+                        Выберите 30 или 60 минут доступа, оплатите удобным способом и получите код вида <strong>#8F4K92QM</strong> для привязки к Telegram.
                     </p>
+                    {% if instant_access_upgrade_offer %}
+                        <div class="note">{{ instant_access_upgrade_offer }}</div>
+                    {% endif %}
                 </div>
 
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
-                        <div class="flash-stack">
-                            {% for category, message in messages %}
-                                <div class="flash {{ category or 'info' }}">{{ message }}</div>
-                            {% endfor %}
-                        </div>
+                        {% for category, message in messages %}
+                            <div class="flash {{ category or 'info' }}">{{ message }}</div>
+                        {% endfor %}
                     {% endif %}
                 {% endwith %}
 
                 {% if not landing_enabled %}
                     <div class="disabled-box">
-                        Публичная продажа временного доступа пока отключена.
-                        Включите её в настройках админ-панели и выберите рабочий хост Hiddify.
+                        Публичная продажа временного доступа пока отключена. Включите её в настройках админ-панели и выберите рабочий хост Hiddify.
                     </div>
                 {% else %}
-                    <div class="purchase-grid">
-                        {% for option in duration_options %}
-                            <div class="duration-card">
-                                <div class="duration-top">
-                                    <div>
-                                        <h2 class="duration-title">{{ option.label }}</h2>
-                                        <div class="duration-note">
-                                            Доступ активируется сразу после оплаты. Одноразовый код можно будет привязать к Telegram-боту и хранить вместе с остальными ключами.
-                                        </div>
-                                    </div>
-                                    <div class="price-pill">{{ '%.0f'|format(option.price_rub) }} RUB</div>
+                    {% for option in duration_options %}
+                        <div class="duration-card {% if option.minutes == 60 %}highlight{% endif %}" id="duration-{{ option.minutes }}">
+                            <div class="row-head">
+                                <div>
+                                    <h2>{{ option.label }}</h2>
+                                    <div class="note">Доступ активируется сразу после оплаты. Если позже захотите перевести его в месячный тариф, быстрый платёж можно учесть при продлении.</div>
                                 </div>
-
-                                <div class="method-list">
-                                    {% if option.payment_methods %}
-                                        {% for method in option.payment_methods %}
-                                            <form class="method-form" action="{{ url_for('instant_access_create') }}" method="post">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <input type="hidden" name="duration_minutes" value="{{ option.minutes }}">
-                                                <input type="hidden" name="payment_method" value="{{ method.id }}">
-                                                <button class="method-button" type="submit">
-                                                    <span class="method-icon">{{ method.icon }}</span>{{ method.label }}
-                                                </button>
-                                            </form>
-                                        {% endfor %}
-                                    {% else %}
-                                        <button class="method-button" type="button" disabled>Нет доступных способов оплаты</button>
-                                    {% endif %}
-                                </div>
+                                <div class="pill">{{ '%.0f'|format(option.price_rub) }} RUB</div>
                             </div>
-                        {% endfor %}
-                    </div>
+                            <div class="method-list" style="margin-top:18px">
+                                {% if option.payment_methods %}
+                                    {% for method in option.payment_methods %}
+                                        <form action="{{ url_for('instant_access_create') }}" method="post">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="duration_minutes" value="{{ option.minutes }}">
+                                            <input type="hidden" name="payment_method" value="{{ method.id }}">
+                                            <button class="method-button" type="submit"><span style="margin-right:8px">{{ method.icon }}</span>{{ method.label }}</button>
+                                        </form>
+                                    {% endfor %}
+                                {% else %}
+                                    <button class="method-button" type="button" disabled>Нет доступных способов оплаты</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
                 {% endif %}
 
                 {% if active_order %}
@@ -555,148 +173,168 @@
                         class="status-card"
                         data-poll-url="{{ url_for('instant_access_status_json', payment_id=active_order.payment_id) }}"
                         data-poll-status="{{ active_order.status }}"
-                        data-poll-fingerprint="{{ active_order.status }}|{{ active_order.connection_string or '' }}|{{ active_order.last_error or '' }}">
-                        <div class="status-grid">
-                            <div class="status-top">
-                                <div>
-                                    <h2 class="status-title">Текущий заказ</h2>
-                                    <div class="status-note">
-                                        После привязки кодом через Telegram ключ появится в кнопке «Мои ключи».
-                                    </div>
-                                </div>
-                                <div class="status-pill {{ active_order.status_variant }}">{{ active_order.status_label }}</div>
+                        data-poll-fingerprint="{{ active_order.status }}|{{ active_order.connection_string or '' }}|{{ active_order.last_error or '' }}|{{ active_order.expires_at or '' }}">
+                        <div class="row-head">
+                            <div>
+                                <h2>Текущий заказ</h2>
+                                <div class="note">После привязки через Telegram этот ключ будет показан в разделе «Мои ключи» с точным временем окончания.</div>
                             </div>
+                            <div class="pill status-pill {{ active_order.status_variant }}">{{ active_order.status_label }}</div>
+                        </div>
 
-                            <div class="info-grid">
-                                <div class="info-card">
-                                    <span class="info-label">Код привязки</span>
-                                    <div class="info-value">
-                                        {% if active_order.display_code %}
-                                            <span class="code-badge">{{ active_order.display_code }}</span>
-                                        {% else %}
-                                            Не сформирован
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                <div class="info-card">
-                                    <span class="info-label">Доступ</span>
-                                    <div class="info-value">{{ active_order.duration_minutes }} минут за {{ '%.0f'|format(active_order.price_rub) }} RUB</div>
-                                </div>
-                                <div class="info-card">
-                                    <span class="info-label">Хост</span>
-                                    <div class="info-value">{{ active_order.host_name or 'Не указан' }}</div>
-                                </div>
-                                <div class="info-card">
-                                    <span class="info-label">Действует до</span>
-                                    <div class="info-value">{{ active_order.expires_at or 'Станет доступно после оплаты' }}</div>
-                                </div>
+                        <div class="stats" style="margin-top:14px">
+                            <div class="mini-card">
+                                <span>{% if active_order.paid_at_timestamp_ms %}С момента оплаты{% else %}С момента заказа{% endif %}</span>
+                                <strong class="timer" data-timer-kind="elapsed" data-start-ms="{{ active_order.paid_at_timestamp_ms or active_order.created_at_timestamp_ms or '' }}">--:--:--</strong>
                             </div>
+                            <div class="mini-card">
+                                <span>Осталось доступа</span>
+                                <strong class="timer" data-timer-kind="remaining" data-end-ms="{{ active_order.expiry_timestamp_ms or '' }}">
+                                    {% if active_order.expiry_timestamp_ms %}--:--:--{% else %}Станет доступно после оплаты{% endif %}
+                                </strong>
+                            </div>
+                            <div class="mini-card">
+                                <span>Код привязки</span>
+                                <strong>{% if active_order.display_code %}<span class="code">{{ active_order.display_code }}</span>{% else %}Не сформирован{% endif %}</strong>
+                            </div>
+                            <div class="mini-card">
+                                <span>Доступ</span>
+                                <strong>{{ active_order.duration_minutes }} минут за {{ '%.0f'|format(active_order.price_rub) }} RUB</strong>
+                            </div>
+                            <div class="mini-card">
+                                <span>Хост</span>
+                                <strong>{{ active_order.host_name or 'Не указан' }}</strong>
+                            </div>
+                            <div class="mini-card">
+                                <span>Действует до</span>
+                                <strong>{{ active_order.expires_at or 'Станет доступно после оплаты' }}</strong>
+                            </div>
+                        </div>
 
+                        {% if active_order.connection_string %}
+                            <div style="margin-top:14px">
+                                <div class="note" style="margin-bottom:8px">VPN-ключ уже готов. Его можно скопировать сразу или сначала привязать к Telegram.</div>
+                                <textarea class="key" readonly spellcheck="false">{{ active_order.connection_string }}</textarea>
+                            </div>
+                        {% endif %}
+
+                        {% if active_order.last_error %}
+                            <div class="flash danger" style="margin-top:14px">{{ active_order.last_error }}</div>
+                        {% endif %}
+
+                        <div class="button-row" style="margin-top:14px">
+                            {% if active_order.payment_url and active_order.status in ['pending', 'paid'] %}
+                                <a class="btn primary" href="{{ active_order.payment_url }}" target="_blank" rel="noopener">Продолжить оплату</a>
+                            {% endif %}
+                            {% if active_order.bind_url %}
+                                <a class="btn primary" href="{{ active_order.bind_url }}" target="_blank" rel="noopener">Привязать через Telegram /start</a>
+                            {% endif %}
                             {% if active_order.connection_string %}
-                                <div>
-                                    <div class="small-note" style="margin-bottom: 8px;">VPN-ключ уже сгенерирован. Его можно скопировать сразу или сначала привязать к Telegram.</div>
-                                    <textarea class="key-box" readonly spellcheck="false">{{ active_order.connection_string }}</textarea>
-                                </div>
+                                <button class="btn secondary" type="button" data-copy-text="{{ active_order.connection_string }}">Скопировать ключ</button>
                             {% endif %}
-
-                            {% if active_order.last_error %}
-                                <div class="flash danger">{{ active_order.last_error }}</div>
+                            {% if active_order.display_code %}
+                                <button class="btn secondary" type="button" data-copy-text="{{ active_order.display_code }}">Скопировать код</button>
                             {% endif %}
+                            <a class="btn secondary" href="{{ url_for('index') }}">Новый заказ</a>
+                        </div>
 
-                            <div class="button-row">
-                                {% if active_order.payment_url and active_order.status in ['pending', 'processing'] %}
-                                    <a class="primary-button" href="{{ active_order.payment_url }}" target="_blank" rel="noopener">Продолжить оплату</a>
-                                {% endif %}
-                                {% if active_order.bind_url %}
-                                    <a class="primary-button" href="{{ active_order.bind_url }}" target="_blank" rel="noopener">Привязать через Telegram /start</a>
-                                {% endif %}
-                                {% if active_order.connection_string %}
-                                    <button class="copy-button" type="button" data-copy-text="{{ active_order.connection_string }}">Скопировать ключ</button>
-                                {% endif %}
-                                {% if active_order.display_code %}
-                                    <button class="secondary-button" type="button" data-copy-text="{{ active_order.display_code }}">Скопировать код</button>
-                                {% endif %}
-                                <a class="secondary-button" href="{{ url_for('index') }}">Новый заказ</a>
-                            </div>
-
-                            <div class="hint-box">
-                                {% if telegram_bot_username %}
-                                    Команда привязки: <code>/start temp_{{ active_order.code }}</code> в боте <strong>@{{ telegram_bot_username }}</strong>.
-                                {% else %}
-                                    Укажите username Telegram-бота в админке, чтобы на странице появилась готовая ссылка привязки.
-                                {% endif %}
-                                После привязки временный ключ можно хранить вместе с остальными, ограничений по количеству таких ключей нет.
-                            </div>
+                        <div class="hint" style="margin-top:14px">
+                            {% if telegram_bot_username %}
+                                Команда привязки: <code>/start temp_{{ active_order.code }}</code> в боте <strong>@{{ telegram_bot_username }}</strong>.
+                            {% else %}
+                                Укажите username Telegram-бота в админке, чтобы на странице появилась готовая ссылка привязки.
+                            {% endif %}
+                            После привязки быстрый ключ можно хранить вместе с обычными. Количество таких привязок для профиля не ограничивается.
                         </div>
                     </div>
                 {% endif %}
             </section>
         </div>
+
+        <section class="panel section">
+            <h2>Почему это удобно</h2>
+            <p>Главная страница не только продаёт быстрый доступ, но и объясняет весь путь: покупка, код, Telegram, мои ключи, апгрейд до обычного тарифа.</p>
+            <div class="benefit-grid" style="margin-top:18px">
+                <div class="card"><strong>Без лишней регистрации</strong><span>Для быстрого доступа не нужно проходить долгий сценарий на сайте.</span></div>
+                <div class="card"><strong>Точное локальное время</strong><span>На странице сразу показывается живой таймер с момента оплаты и точный остаток доступа.</span></div>
+                <div class="card"><strong>Апгрейд в обычный тариф</strong><span>Быстрый ключ можно продлить на месяц и дальше по правилам, заданным администратором.</span></div>
+                <div class="card"><strong>Один центр управления</strong><span>После привязки быстрые и обычные ключи живут в одном Telegram-профиле.</span></div>
+            </div>
+            <div class="footer-cta">
+                <div>
+                    <strong>Нужен полный профиль вместо быстрого доступа?</strong>
+                    <span>Откройте бота для обычных тарифов, продлений и управления ключами.</span>
+                </div>
+                <div class="cta-row">
+                    {% if telegram_bot_username %}
+                        <a class="btn primary" href="https://t.me/{{ telegram_bot_username }}" target="_blank" rel="noopener">Перейти в бота</a>
+                    {% endif %}
+                    <a class="btn secondary" href="#quick-buy">Остаться на быстром доступе</a>
+                </div>
+            </div>
+        </section>
     </div>
 
     <script>
         (function () {
-            function copyText(value, button) {
-                if (!value) {
-                    return;
+            function pad(value) { return String(value).padStart(2, "0"); }
+            function formatDuration(ms, allowNegative) {
+                if (typeof ms !== "number" || !isFinite(ms)) return "—";
+                var sign = "";
+                if (ms < 0) {
+                    if (!allowNegative) return "00:00:00";
+                    sign = "-";
+                    ms = Math.abs(ms);
                 }
+                var totalSeconds = Math.floor(ms / 1000);
+                var days = Math.floor(totalSeconds / 86400);
+                var hours = Math.floor((totalSeconds % 86400) / 3600);
+                var minutes = Math.floor((totalSeconds % 3600) / 60);
+                var seconds = totalSeconds % 60;
+                return days > 0 ? sign + days + "д " + pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : sign + pad(hours) + ":" + pad(minutes) + ":" + pad(seconds);
+            }
+            function updateTimers() {
+                var now = Date.now();
+                document.querySelectorAll("[data-timer-kind='elapsed']").forEach(function (node) {
+                    var startMs = Number(node.getAttribute("data-start-ms"));
+                    node.textContent = startMs ? formatDuration(now - startMs, false) : "—";
+                });
+                document.querySelectorAll("[data-timer-kind='remaining']").forEach(function (node) {
+                    var endMs = Number(node.getAttribute("data-end-ms"));
+                    if (endMs) node.textContent = formatDuration(endMs - now, false);
+                });
+            }
+            function copyText(value, button) {
+                if (!value) return;
                 navigator.clipboard.writeText(value).then(function () {
-                    if (!button) {
-                        return;
-                    }
                     var original = button.textContent;
                     button.textContent = "Скопировано";
-                    setTimeout(function () {
-                        button.textContent = original;
-                    }, 1400);
+                    setTimeout(function () { button.textContent = original; }, 1400);
                 }).catch(function () {});
             }
-
             document.querySelectorAll("[data-copy-text]").forEach(function (button) {
-                button.addEventListener("click", function () {
-                    copyText(button.getAttribute("data-copy-text"), button);
-                });
+                button.addEventListener("click", function () { copyText(button.getAttribute("data-copy-text"), button); });
             });
+            updateTimers();
+            setInterval(updateTimers, 1000);
 
             var statusCard = document.querySelector("[data-poll-url]");
-            if (!statusCard) {
-                return;
-            }
-
+            if (!statusCard) return;
             var pollStatus = statusCard.getAttribute("data-poll-status") || "";
-            if (["pending", "processing", "ready"].indexOf(pollStatus) === -1) {
-                return;
-            }
-
+            if (["pending", "paid", "ready"].indexOf(pollStatus) === -1) return;
             var pollUrl = statusCard.getAttribute("data-poll-url");
             var lastFingerprint = statusCard.getAttribute("data-poll-fingerprint") || "";
-
             function poll() {
                 fetch(pollUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } })
-                    .then(function (response) {
-                        if (!response.ok) {
-                            throw new Error("status_" + response.status);
-                        }
-                        return response.json();
-                    })
+                    .then(function (response) { if (!response.ok) throw new Error("status_" + response.status); return response.json(); })
                     .then(function (payload) {
-                        if (!payload || !payload.ok || !payload.order) {
-                            return;
-                        }
+                        if (!payload || !payload.ok || !payload.order) return;
                         var order = payload.order;
-                        var fingerprint = [
-                            order.status || "",
-                            order.connection_string || "",
-                            order.last_error || "",
-                            order.bind_url || ""
-                        ].join("|");
-                        if (fingerprint !== lastFingerprint) {
-                            window.location.reload();
-                        }
+                        var fingerprint = [order.status || "", order.connection_string || "", order.last_error || "", order.bind_url || "", order.expires_at || ""].join("|");
+                        if (fingerprint !== lastFingerprint) window.location.reload();
                     })
                     .catch(function () {});
             }
-
             setInterval(poll, 5000);
         })();
     </script>

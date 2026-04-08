@@ -355,10 +355,11 @@ def _build_user_payload(
     email: str,
     target_expiry_dt: datetime,
     existing_user: dict[str, Any] | None,
+    minimum_package_days: int = 0,
 ) -> dict[str, Any]:
     today = datetime.now().date()
     target_date = target_expiry_dt.date()
-    package_days = max((target_date - today).days, 0)
+    package_days = max((target_date - today).days, int(minimum_package_days or 0), 0)
 
     payload: dict[str, Any] = {
         "uuid": user_uuid,
@@ -424,6 +425,7 @@ async def create_or_update_key_on_host(
     email: str,
     days_to_add: int | None = None,
     expiry_timestamp_ms: int | None = None,
+    minimum_package_days: int = 0,
 ) -> dict[str, Any] | None:
     host_data = get_host(host_name)
     if not host_data:
@@ -448,7 +450,13 @@ async def create_or_update_key_on_host(
                 expiry_timestamp_ms=expiry_timestamp_ms,
             )
             user_uuid = str((existing_user or {}).get("uuid") or stored_uuid or uuid_lib.uuid4())
-            payload = _build_user_payload(user_uuid, email, target_expiry_dt, existing_user)
+            payload = _build_user_payload(
+                user_uuid,
+                email,
+                target_expiry_dt,
+                existing_user,
+                minimum_package_days=minimum_package_days,
+            )
 
             if existing_user:
                 response_user = await client.update_user(user_uuid, payload)

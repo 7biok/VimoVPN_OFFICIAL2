@@ -53,6 +53,8 @@ from shop_bot.data_manager.database import (
     find_and_complete_pending_transaction,
     get_transaction_status,
     bind_instant_access_code,
+    get_instant_access_order_by_key_id,
+    mark_instant_access_upgraded,
     check_promo_code_available,
     redeem_promo_code,
     update_promo_code_status,
@@ -214,6 +216,62 @@ def get_user_router() -> Router:
         if final_price < Decimal("0"):
             final_price = Decimal("0.00")
         return final_price
+
+    def _money(value, default: str = "0.00") -> Decimal:
+        try:
+            return Decimal(str(value)).quantize(Decimal("0.01"))
+        except Exception:
+            return Decimal(default).quantize(Decimal("0.01"))
+
+    def _get_instant_access_upgrade_context(action: str | None, key_id: int | None, plan: dict | None) -> dict | None:
+        if str(action or "").strip().lower() != "extend" or not key_id or not plan:
+            return None
+
+        order = get_instant_access_order_by_key_id(int(key_id), require_not_upgraded=True)
+        if not order:
+            return None
+
+        mode = str(get_setting("instant_access_upgrade_mode") or "deduct_paid").strip().lower()
+        if mode not in {"deduct_paid", "percent"}:
+            return None
+
+        base_price = _money(plan.get("price"), "0.00")
+        already_paid = _money(order.get("price_rub"), "0.00")
+        discount_amount = Decimal("0.00")
+        final_price = base_price
+        description = None
+
+        if mode == "deduct_paid":
+            discount_amount = min(base_price, already_paid)
+            final_price = (base_price - discount_amount).quantize(Decimal("0.01"))
+            description = (
+                f"⚡ Быстрый доступ засчитан в продление.\n"
+                f"Уже оплачено: {discount_amount:.2f} RUB.\n"
+            )
+        else:
+            percent = _money(get_setting("instant_access_upgrade_discount_percent") or "0", "0.00")
+            if percent <= 0:
+                return None
+            if percent > Decimal("100"):
+                percent = Decimal("100.00")
+            discount_amount = (base_price * percent / Decimal("100")).quantize(Decimal("0.01"))
+            final_price = (base_price - discount_amount).quantize(Decimal("0.01"))
+            description = (
+                f"⚡ Скидка за апгрейд быстрого доступа: {percent:.0f}%.\n"
+                f"Экономия: {discount_amount:.2f} RUB.\n"
+            )
+
+        if final_price < Decimal("0.00"):
+            final_price = Decimal("0.00")
+
+        return {
+            "order": order,
+            "mode": mode,
+            "base_price": base_price,
+            "discount_amount": discount_amount,
+            "final_price": final_price,
+            "description": description,
+        }
 
     @user_router.message(CommandStart())
     async def start_handler(message: types.Message, state: FSMContext, bot: Bot, command: CommandObject):
@@ -2016,23 +2074,48 @@ def get_user_router() -> Router:
             await state.clear()
             return
         
-        price = Decimal(str(plan['price']))
+        price = Decimal(str(plan['price'])).quantize(Decimal("0.01"))
         final_price = price
-        message_text = CHOOSE_PAYMENT_METHOD_MESSAGE
+        pricing_prefix = ""
 
-        if user_data.get('referred_by') and user_data.get('total_spent', 0) == 0:
-            discount_percentage_str = get_setting("referral_discount") or "0"
-            discount_percentage = Decimal(discount_percentage_str)
-            
-            if discount_percentage > 0:
-                discount_amount = (price * discount_percentage / 100).quantize(Decimal("0.01"))
-                final_price = price - discount_amount
+        upgrade_context = _get_instant_access_upgrade_context(
+            data.get('action'),
+            data.get('key_id'),
+            plan,
+        )
+        if upgrade_context:
+            final_price = upgrade_context["final_price"]
+            pricing_prefix = (
+                f"{upgrade_context['description']}"
+                f"Базовая цена: <s>{upgrade_context['base_price']:.2f} RUB</s>\n"
+                f"<b>Цена после апгрейда: {final_price:.2f} RUB</b>\n\n"
+            )
+            await state.update_data(
+                instant_access_upgrade_key_id=int(data.get('key_id') or 0),
+                instant_access_upgrade_mode=upgrade_context["mode"],
+                instant_access_upgrade_discount_amount=float(upgrade_context["discount_amount"]),
+            )
+        else:
+            await state.update_data(
+                instant_access_upgrade_key_id=None,
+                instant_access_upgrade_mode=None,
+                instant_access_upgrade_discount_amount=None,
+            )
 
-                message_text = (
-                    f"🎉 Как приглашенному пользователю, на вашу первую покупку предоставляется скидка {discount_percentage_str}%!\n"
-                    f"Старая цена: <s>{price:.2f} RUB</s>\n"
-                    f"<b>Новая цена: {final_price:.2f} RUB</b>\n\n"
-                ) + CHOOSE_PAYMENT_METHOD_MESSAGE
+            if user_data.get('referred_by') and user_data.get('total_spent', 0) == 0:
+                discount_percentage_str = get_setting("referral_discount") or "0"
+                discount_percentage = Decimal(discount_percentage_str)
+                
+                if discount_percentage > 0:
+                    discount_amount = (price * discount_percentage / 100).quantize(Decimal("0.01"))
+                    final_price = price - discount_amount
+                    pricing_prefix = (
+                        f"🎉 Как приглашенному пользователю, на вашу первую покупку предоставляется скидка {discount_percentage_str}%!\n"
+                        f"Старая цена: <s>{price:.2f} RUB</s>\n"
+                        f"<b>Новая цена: {final_price:.2f} RUB</b>\n\n"
+                    )
+
+        message_text = pricing_prefix + CHOOSE_PAYMENT_METHOD_MESSAGE
 
         # Промокод (если уже применён)
         promo_percent = data.get('promo_discount_percent')
@@ -2040,6 +2123,7 @@ def get_user_router() -> Router:
         promo_code = (data.get('promo_code') or '').strip()
         if promo_code:
             try:
+                price_before_promo = final_price
                 if promo_percent:
                     perc = Decimal(str(promo_percent))
                     if perc > 0:
@@ -2061,9 +2145,10 @@ def get_user_router() -> Router:
                     promo_line += "применён\n"
                 message_text = (
                     (f"{promo_line}"
-                     f"Старая цена: <s>{price:.2f} RUB</s>\n"
+                     f"Старая цена: <s>{price_before_promo:.2f} RUB</s>\n"
                      f"<b>Новая цена: {final_price:.2f} RUB</b>\n\n")
-                    + message_text
+                    + pricing_prefix
+                    + CHOOSE_PAYMENT_METHOD_MESSAGE
                 )
             except Exception:
                 pass
@@ -3631,6 +3716,30 @@ async def process_successful_payment(bot: Bot, metadata: dict):
             )
         elif action == "extend":
             update_key_info(key_id, result['client_uuid'], result['expiry_timestamp_ms'])
+            try:
+                instant_order = get_instant_access_order_by_key_id(key_id, require_not_upgraded=True)
+                if instant_order:
+                    upgrade_mode = str(get_setting("instant_access_upgrade_mode") or "off").strip().lower()
+                    discount_amount = 0.0
+                    plan_for_upgrade = get_plan_by_id(plan_id) if plan_id else None
+                    if plan_for_upgrade:
+                        base_price = _money(plan_for_upgrade.get("price"), "0.00")
+                        if upgrade_mode == "deduct_paid":
+                            discount_amount = float(min(base_price, _money(instant_order.get("price_rub"), "0.00")))
+                        elif upgrade_mode == "percent":
+                            percent = _money(get_setting("instant_access_upgrade_discount_percent") or "0", "0.00")
+                            if percent > Decimal("100"):
+                                percent = Decimal("100.00")
+                            if percent > 0:
+                                discount_amount = float((base_price * percent / Decimal("100")).quantize(Decimal("0.01")))
+                    mark_instant_access_upgraded(
+                        key_id,
+                        plan_id=plan_id or None,
+                        discount_amount=discount_amount,
+                        mode=upgrade_mode or "off",
+                    )
+            except Exception as e:
+                logger.warning(f"Не удалось отметить быстрый ключ {key_id} как upgraded: {e}")
 
         # Начисляем реферальное вознаграждение по покупке — применяется для new и extend
         user_data = get_user(user_id)

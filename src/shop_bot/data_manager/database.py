@@ -201,7 +201,11 @@ def initialize_db():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     paid_at TIMESTAMP,
                     bound_at TIMESTAMP,
-                    last_error TEXT
+                    last_error TEXT,
+                    upgraded_at TIMESTAMP,
+                    upgrade_plan_id INTEGER,
+                    upgrade_discount_amount REAL,
+                    upgrade_mode TEXT
                 )
             ''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_payment_id ON instant_access_orders(payment_id)")
@@ -274,6 +278,8 @@ def initialize_db():
                 "instant_access_host_name": None,
                 "instant_access_price_30m": "100",
                 "instant_access_price_60m": "180",
+                "instant_access_upgrade_mode": "deduct_paid",
+                "instant_access_upgrade_discount_percent": "15",
                 "minimum_withdrawal": "100",
                 "admin_telegram_id": None,
                 "admin_telegram_ids": None,
@@ -984,7 +990,11 @@ def run_migration():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     paid_at TIMESTAMP,
                     bound_at TIMESTAMP,
-                    last_error TEXT
+                    last_error TEXT,
+                    upgraded_at TIMESTAMP,
+                    upgrade_plan_id INTEGER,
+                    upgrade_discount_amount REAL,
+                    upgrade_mode TEXT
                 )
                 '''
             )
@@ -1004,6 +1014,10 @@ def run_migration():
                 'paid_at': "ALTER TABLE instant_access_orders ADD COLUMN paid_at TIMESTAMP",
                 'bound_at': "ALTER TABLE instant_access_orders ADD COLUMN bound_at TIMESTAMP",
                 'last_error': "ALTER TABLE instant_access_orders ADD COLUMN last_error TEXT",
+                'upgraded_at': "ALTER TABLE instant_access_orders ADD COLUMN upgraded_at TIMESTAMP",
+                'upgrade_plan_id': "ALTER TABLE instant_access_orders ADD COLUMN upgrade_plan_id INTEGER",
+                'upgrade_discount_amount': "ALTER TABLE instant_access_orders ADD COLUMN upgrade_discount_amount REAL",
+                'upgrade_mode': "ALTER TABLE instant_access_orders ADD COLUMN upgrade_mode TEXT",
             }
             for column_name, statement in instant_columns.items():
                 if column_name not in ia_cols:
@@ -1641,6 +1655,64 @@ def get_instant_access_order_by_code(code: str) -> dict | None:
     except sqlite3.Error as e:
         logging.error(f"Не удалось получить instant_access_orders по коду={code}: {e}")
         return None
+
+def get_instant_access_order_by_key_id(key_id: int, require_not_upgraded: bool = False) -> dict | None:
+    try:
+        key_id_int = int(key_id)
+    except Exception:
+        return None
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            query = "SELECT * FROM instant_access_orders WHERE bound_key_id = ?"
+            params: list = [key_id_int]
+            if require_not_upgraded:
+                query += " AND upgraded_at IS NULL"
+            query += " ORDER BY COALESCE(bound_at, updated_at, created_at) DESC LIMIT 1"
+            cursor.execute(query, tuple(params))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить instant_access_orders по key_id={key_id}: {e}")
+        return None
+
+def mark_instant_access_upgraded(
+    key_id: int,
+    *,
+    plan_id: int | None = None,
+    discount_amount: float | None = None,
+    mode: str | None = None,
+) -> bool:
+    try:
+        key_id_int = int(key_id)
+    except Exception:
+        return False
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE instant_access_orders
+                SET upgraded_at = COALESCE(upgraded_at, CURRENT_TIMESTAMP),
+                    upgrade_plan_id = COALESCE(?, upgrade_plan_id),
+                    upgrade_discount_amount = COALESCE(?, upgrade_discount_amount),
+                    upgrade_mode = COALESCE(?, upgrade_mode),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE bound_key_id = ? AND upgraded_at IS NULL
+                """,
+                (
+                    int(plan_id) if plan_id is not None else None,
+                    float(discount_amount) if discount_amount is not None else None,
+                    (str(mode).strip() if mode is not None else None),
+                    key_id_int,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось отметить instant_access_orders как upgraded для key_id={key_id}: {e}")
+        return False
 
 def bind_instant_access_code(code: str, user_id: int) -> dict:
     code_s = (code or "").strip().upper()

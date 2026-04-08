@@ -166,6 +166,20 @@ async def sync_keys_with_panels():
                 key_email = db_key['key_email']
                 expiry_date = datetime.fromisoformat(db_key['expiry_date'])
                 now = datetime.now()
+                instant_access_order = database.get_instant_access_order_by_key_id(
+                    db_key.get('key_id'),
+                    require_not_upgraded=True,
+                )
+
+                if instant_access_order and expiry_date <= now:
+                    logger.debug(
+                        f"Scheduler: Быстрый ключ '{key_email}' истёк по локальному таймеру. Удаляю доступ с панели."
+                    )
+                    try:
+                        await xui_api.delete_client_on_host(host_name, key_email)
+                    except Exception as e:
+                        logger.error(f"Scheduler: Не удалось удалить быстрый ключ '{key_email}' с панели: {e}")
+
                 if expiry_date < now - timedelta(days=5):
                     logger.debug(f"Scheduler: Ключ '{key_email}' просрочен более 5 дней. Удаляю с панели и из БД.")
                     try:
@@ -196,6 +210,12 @@ async def sync_keys_with_panels():
                             users_by_uuid.pop(server_uuid, None)
 
                 if server_user:
+                    if instant_access_order and expiry_date > now:
+                        logger.debug(
+                            f"Scheduler: Пропускаю синхронизацию срока для быстрого ключа '{key_email}' на '{host_name}'."
+                        )
+                        continue
+
                     server_expiry_ms = xui_api.get_user_expiry_timestamp_ms(server_user)
                     local_expiry_dt = expiry_date
                     local_expiry_ms = int(local_expiry_dt.timestamp() * 1000)

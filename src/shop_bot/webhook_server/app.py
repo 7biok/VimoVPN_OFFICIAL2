@@ -74,6 +74,7 @@ ALL_SETTINGS_KEYS = [
     "heleket_merchant_id", "heleket_api_key", "domain", "referral_percentage",
     "referral_discount", "instant_access_enabled", "instant_access_host_name",
     "instant_access_price_30m", "instant_access_price_60m",
+    "instant_access_upgrade_mode", "instant_access_upgrade_discount_percent",
     "ton_wallet_address", "tonapi_key", "force_subscription", "trial_enabled", "trial_duration_days", "enable_referrals", "minimum_withdrawal",
     # Реферальные начисления: альтернативный фиксированный бонус
     "enable_fixed_referral_bonus", "fixed_referral_bonus_amount",
@@ -117,6 +118,20 @@ def _format_expiry_timestamp(expiry_timestamp_ms: int | None) -> str | None:
             return None
         dt = datetime.fromtimestamp(int(expiry_timestamp_ms) / 1000)
         return dt.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return None
+
+def _to_timestamp_ms(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        text = str(value).strip()
+        if not text:
+            return None
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return int(dt.timestamp() * 1000)
     except Exception:
         return None
 
@@ -274,6 +289,13 @@ def create_webhook_app(bot_controller_instance):
         bind_url = None
         if bot_username and status in ("ready", "bound") and order.get("code"):
             bind_url = f"https://t.me/{bot_username}?start=temp_{order['code']}"
+        created_at_ms = _to_timestamp_ms(order.get("created_at"))
+        paid_at_ms = _to_timestamp_ms(order.get("paid_at"))
+        expiry_ms = None
+        try:
+            expiry_ms = int(order.get("expiry_timestamp_ms")) if order.get("expiry_timestamp_ms") is not None else None
+        except Exception:
+            expiry_ms = None
         return {
             "code": order.get("code"),
             "display_code": f"#{order['code']}" if order.get("code") else None,
@@ -287,7 +309,12 @@ def create_webhook_app(bot_controller_instance):
             "duration_minutes": order.get("duration_minutes"),
             "price_rub": float(order.get("price_rub") or 0),
             "connection_string": order.get("connection_string"),
-            "expires_at": _format_expiry_timestamp(order.get("expiry_timestamp_ms")),
+            "expires_at": _format_expiry_timestamp(expiry_ms),
+            "expiry_timestamp_ms": expiry_ms,
+            "created_at_timestamp_ms": created_at_ms,
+            "paid_at_timestamp_ms": paid_at_ms,
+            "created_at": str(order.get("created_at") or "").strip() or None,
+            "paid_at": str(order.get("paid_at") or "").strip() or None,
             "bind_url": bind_url,
             "last_error": order.get("last_error"),
         }
@@ -520,6 +547,7 @@ def create_webhook_app(bot_controller_instance):
                 host_name=str(order.get("host_name") or ""),
                 email=key_email,
                 expiry_timestamp_ms=expiry_value,
+                minimum_package_days=1,
             )
             if not result:
                 mark_instant_access_failed(payment_id, "panel_provision_failed")
@@ -529,7 +557,7 @@ def create_webhook_app(bot_controller_instance):
                 key_email=result.get("email") or key_email,
                 xui_client_uuid=result.get("client_uuid") or "",
                 connection_string=result.get("connection_string"),
-                expiry_timestamp_ms=int(result.get("expiry_timestamp_ms") or expiry_value),
+                expiry_timestamp_ms=expiry_value,
             )
         except Exception as exc:
             logger.error(f"Instant access provisioning failed for {payment_id}: {exc}", exc_info=True)
@@ -590,6 +618,13 @@ def create_webhook_app(bot_controller_instance):
 
     def _build_landing_context(order: dict | None = None) -> dict:
         config = _resolve_instant_access_config()
+        upgrade_mode = str(get_setting("instant_access_upgrade_mode") or "deduct_paid").strip().lower()
+        upgrade_percent = _coerce_decimal(get_setting("instant_access_upgrade_discount_percent"), "15")
+        upgrade_offer = None
+        if upgrade_mode == "deduct_paid":
+            upgrade_offer = "Платёж за быстрый доступ можно зачесть при первом продлении обычного тарифа."
+        elif upgrade_mode == "percent" and upgrade_percent > 0:
+            upgrade_offer = f"При переходе на обычный тариф действует скидка {upgrade_percent:.0f}%."
         duration_options = []
         for duration in INSTANT_ACCESS_DURATIONS:
             price = config["price_30m"] if duration == 30 else config["price_60m"]
@@ -603,12 +638,13 @@ def create_webhook_app(bot_controller_instance):
             )
         order_payload = _serialize_instant_access_order(order)
         return {
-            "page_title": "VimoVpn Instant Access",
+            "page_title": "VimoVpn",
             "landing_enabled": bool(config["enabled"] and config["host"]),
             "landing_host": config["host_name"],
             "duration_options": duration_options,
             "active_order": order_payload,
             "telegram_bot_username": _public_bot_username(),
+            "instant_access_upgrade_offer": upgrade_offer,
         }
 
     @flask_app.route('/brand-title', methods=['POST'])
