@@ -95,7 +95,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     // Theme toggle: persists selection and updates <html data-bs-theme>
     function initializeThemeToggle() {
-        const THEME_KEY = 'ui_theme';
+        const THEME_KEY = 'ui_theme_vimovpn';
         const root = document.documentElement; // <html>
         const btn = document.getElementById('theme-toggle');
         const label = btn ? btn.querySelector('.theme-label') : null;

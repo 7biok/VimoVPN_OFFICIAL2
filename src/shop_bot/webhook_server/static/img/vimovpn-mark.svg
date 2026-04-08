@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">VimoVpn Mark</title>
+  <desc id="desc">Blue shield mark with white V glyph.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="80%" r="70%">
+      <stop offset="0%" stop-color="#0b66d8" />
+      <stop offset="100%" stop-color="#090c12" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)" />
+  <path d="M256 92 366 146v93c0 103-58 173-110 212-52-39-110-109-110-212v-93z" fill="none" stroke="#1580ff" stroke-width="16" stroke-linejoin="round" />
+  <path d="M256 116 345 160v78c0 81-43 137-89 172-46-35-89-91-89-172v-78z" fill="#0d121b" />
+  <path d="M191 210h26l39 59 40-59h27l-67 103z" fill="#ffffff" />
+  <path d="M304 269 351 210h26l-47 59-22 35h-27l16-24z" fill="#ffffff" />
+</svg>

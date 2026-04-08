@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title or 'VimoVpn' }}</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}">
     <style>
         :root {
             --bg:#07090d; --panel:rgba(9,13,20,.86); --line:rgba(255,255,255,.08);
@@ -19,6 +19,9 @@
                 radial-gradient(circle at 50% 102%, rgba(16,109,237,.58), transparent 36%),
                 radial-gradient(circle at 50% 82%, rgba(16,109,237,.18), transparent 28%),
                 linear-gradient(180deg,#090a0d 0%,#070a11 56%,#091529 100%);
+            background-repeat:no-repeat;
+            background-size:cover,cover,cover;
+            background-attachment:fixed;
         }
         .wrap{width:min(1180px,calc(100vw - 24px));margin:0 auto;padding:22px 0 48px}
         .topbar,.cta-row,.method-list,.button-row,.benefit-grid{display:flex;gap:12px;flex-wrap:wrap}
@@ -79,7 +82,7 @@
     <div class="wrap">
         <div class="topbar">
             <a class="brand-mini" href="{{ url_for('index') }}">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn">
+                <img src="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" alt="VimoVpn">
                 <span><strong>VimoVpn</strong><span>Быстрый доступ и Telegram-управление</span></span>
             </a>
             <div class="cta-row">
@@ -92,7 +95,7 @@
 
         <div class="hero">
             <section class="panel hero-main">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn logo">
+                <img src="{{ url_for('static', filename='img/vimovpn-logo.svg') }}" alt="VimoVpn logo">
                 <h1 class="word">VimoVpn</h1>
                 <p class="lead">
                     Главная страница сервиса и быстрый вход в VPN в одном месте: переход в Telegram-бота для полноценного профиля или мгновенная покупка доступа на 30 или 60 минут.

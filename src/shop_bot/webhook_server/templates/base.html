@@ -4,12 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Панель управления ботом{% endblock %}</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}" />
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/favicon-16x16.png') }}" />
-    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon-32x32.png') }}" />
-    <link rel="icon" href="{{ url_for('static', filename='img/safari-pinned-tab.svg') }}" type="image/svg+xml" />
-    <link rel="mask-icon" href="{{ url_for('static', filename='img/safari-pinned-tab.svg') }}" color="#1580ff" />
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}" />
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" />
     <meta name="theme-color" content="#1580ff" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css" />
@@ -34,7 +31,7 @@
 
           <a href="{{ url_for('dashboard_page') }}" class="admin-brand">
             <span class="admin-brand__logo">
-              <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VimoVpn" />
+              <img src="{{ url_for('static', filename='img/vimovpn-mark.svg') }}" alt="VimoVpn" />
             </span>
             <span class="admin-brand__copy">
               <strong id="brand-title">{{ brand_title or 'VimoVpn' }}</strong>
