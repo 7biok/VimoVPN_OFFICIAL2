@@ -2288,6 +2288,9 @@ def create_webhook_app(bot_controller_instance):
         host_url = (request.form.get('host_url') or '').strip()
         host_username = (request.form.get('host_username') or '').strip() or None
         host_pass = request.form.get('host_pass')
+        host_api_key = (request.form.get('host_api_key') or '').strip() or None
+        host_proxy_path = (request.form.get('host_proxy_path') or '').strip().strip('/') or None
+        host_client_proxy_path = (request.form.get('host_client_proxy_path') or '').strip().strip('/') or None
 
         if not host_name:
             flash('Шаг 1: укажите название хоста.', 'warning')
@@ -2302,6 +2305,24 @@ def create_webhook_app(bot_controller_instance):
             if not host_pass:
                 flash('Шаг 2: для Marzban требуется admin password.', 'warning')
                 return redirect(url_for('settings_page', tab='hosts'))
+        is_panel_alive, probe_message = asyncio.run(
+            xui_api.probe_host_panel_connection(
+                panel_type=panel_type,
+                host_name=host_name,
+                host_url=host_url,
+                host_username=host_username,
+                host_pass=host_pass,
+                host_api_key=host_api_key,
+                host_proxy_path=host_proxy_path,
+                host_client_proxy_path=host_client_proxy_path,
+            )
+        )
+        if not is_panel_alive:
+            details = (probe_message or '').strip()
+            if 'certificate verify failed' in details.lower() and 'ip address mismatch' in details.lower():
+                details = f"{details} Используйте домен панели вместо IP при HTTPS."
+            flash(f"Шаг 2: не удалось подключиться к панели по API: {details}", 'danger')
+            return redirect(url_for('settings_page', tab='hosts'))
 
         ssh_deploy_script = (request.form.get('ssh_deploy_script') or '').strip() or None
         try:
@@ -2319,9 +2340,9 @@ def create_webhook_app(bot_controller_instance):
             inbound=int(request.form.get('host_inbound_id') or 0),
             subscription_url=(request.form.get('host_subscription_url') or '').strip() or None,
             panel_type=panel_type,
-            api_key=(request.form.get('host_api_key') or '').strip() or None,
-            proxy_path=(request.form.get('host_proxy_path') or '').strip().strip('/') or None,
-            client_proxy_path=(request.form.get('host_client_proxy_path') or '').strip().strip('/') or None,
+            api_key=host_api_key,
+            proxy_path=host_proxy_path,
+            client_proxy_path=host_client_proxy_path,
             host_category=(request.form.get('host_category') or '').strip() or None,
             ssh_deploy_script=ssh_deploy_script,
             ssh_auto_deploy=(request.form.get('ssh_auto_deploy') or '').strip().lower() in ('1', 'true', 'on', 'yes'),
@@ -2329,11 +2350,16 @@ def create_webhook_app(bot_controller_instance):
         flash(f"Хост '{request.form['host_name']}' успешно добавлен.", 'success')
         return redirect(url_for('settings_page', tab='hosts'))
 
-    @flask_app.route('/delete-host/<host_name>', methods=['POST'])
+    @flask_app.route('/delete-host', methods=['POST'])
+    @flask_app.route('/delete-host/<path:host_name>', methods=['POST'])
     @login_required
-    def delete_host_route(host_name):
-        delete_host(host_name)
-        flash(f"Хост '{host_name}' и все его тарифы были удалены.", 'success')
+    def delete_host_route(host_name=None):
+        resolved_host_name = (host_name or request.form.get('host_name') or '').strip()
+        if not resolved_host_name:
+            flash('Не удалось удалить хост: пустое имя хоста.', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+        delete_host(resolved_host_name)
+        flash(f"Хост '{resolved_host_name}' и все его тарифы были удалены.", 'success')
         return redirect(url_for('settings_page', tab='hosts'))
 
     @flask_app.route('/add-plan', methods=['POST'])

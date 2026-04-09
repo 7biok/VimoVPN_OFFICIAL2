@@ -243,11 +243,12 @@
 				<div class="host-header">
 					<h3>{{ host.host_name }}</h3>
 					<form
-						action="{{ url_for('delete_host_route', host_name=host.host_name) }}"
+						action="{{ url_for('delete_host_route') }}"
 						method="post"
 						data-confirm="Вы уверены, что хотите удалить этот хост и все его тарифы?"
 					>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input type="hidden" name="host_name" value="{{ host.host_name }}" />
 						<button type="submit" class="btn btn-danger btn-sm">
 							Удалить
 						</button>

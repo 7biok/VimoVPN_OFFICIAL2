@@ -437,6 +437,48 @@ def _get_host_panel_type(host_data: dict[str, Any] | None) -> str:
     return "hiddify"
 
 
+async def probe_host_panel_connection(
+    *,
+    panel_type: str,
+    host_name: str,
+    host_url: str,
+    host_username: str | None = None,
+    host_pass: str | None = None,
+    host_api_key: str | None = None,
+    host_proxy_path: str | None = None,
+    host_client_proxy_path: str | None = None,
+) -> tuple[bool, str]:
+    """Validate panel connectivity using provided credentials and API endpoint."""
+    normalized_panel_type = str(panel_type or "hiddify").strip().lower()
+    if normalized_panel_type not in ("hiddify", "marzban"):
+        normalized_panel_type = "hiddify"
+
+    host_data: dict[str, Any] = {
+        "host_name": host_name,
+        "host_url": host_url,
+        "host_username": host_username,
+        "host_pass": host_pass,
+        "host_api_key": host_api_key,
+        "host_proxy_path": host_proxy_path,
+        "host_client_proxy_path": host_client_proxy_path,
+        "panel_type": normalized_panel_type,
+    }
+
+    try:
+        if normalized_panel_type == "marzban":
+            config = _resolve_marzban_config(host_data)
+            async with MarzbanClient(config) as client:
+                await client.list_users()
+            return True, "ok"
+
+        config = _resolve_host_config(host_data)
+        async with HiddifyClient(config) as client:
+            await client.list_users()
+        return True, "ok"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def login_to_host(host_url: str, username: str, password: str, inbound_id: int):
     try:
         config = _resolve_host_config(

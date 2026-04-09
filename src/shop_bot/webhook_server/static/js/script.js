@@ -222,6 +222,33 @@ document.addEventListener('DOMContentLoaded', function () {
             dlg.classList.add('modal-dialog-centered');
         }
     });
+    function cleanupStaleModalState(forceClose){
+        const showCount = document.querySelectorAll('.modal.show').length;
+        const backdrops = Array.from(document.querySelectorAll('.modal-backdrop'));
+        const shouldHardCleanup = Boolean(forceClose) || showCount === 0;
+        if (shouldHardCleanup) {
+            backdrops.forEach((node) => node.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+            document.body.style.removeProperty('overflow');
+            return;
+        }
+        if (backdrops.length > showCount) {
+            backdrops.slice(0, backdrops.length - showCount).forEach((node) => node.remove());
+        }
+    }
+    document.querySelectorAll('.modal').forEach((modalEl) => {
+        if (modalEl.parentElement !== document.body) {
+            document.body.appendChild(modalEl);
+        }
+        modalEl.addEventListener('show.bs.modal', () => cleanupStaleModalState(true));
+        modalEl.addEventListener('shown.bs.modal', () => cleanupStaleModalState(false));
+        modalEl.addEventListener('hidden.bs.modal', () => {
+            setTimeout(() => cleanupStaleModalState(false), 0);
+        });
+    });
+    window.addEventListener('pageshow', () => cleanupStaleModalState(false));
+    cleanupStaleModalState(false);
 
     function initializeDashboardCharts() {
         const usersChartCanvas = document.getElementById('newUsersChart');
