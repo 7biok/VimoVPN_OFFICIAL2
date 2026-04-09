@@ -97,7 +97,7 @@
 				<div class="col-12 col-lg-5">
 					<div class="host-card">
 						<h4>Добавить новый хост</h4>
-						<form action="{{ url_for('add_host_route') }}" method="post">
+						<form action="{{ url_for('add_host_route') }}" method="post" enctype="multipart/form-data">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 							<div class="form-group">
 								<label for="host_name">Название хоста:</label>
@@ -109,19 +109,33 @@
                                 <small>Категория будет показана в Telegram-боте при выборе сервера.</small>
                             </div>
 							<div class="form-group">
+                                <label for="panel_type">Тип панели:</label>
+                                <select id="panel_type" name="panel_type">
+                                    <option value="hiddify" selected>Hiddify</option>
+                                    <option value="marzban">Marzban</option>
+                                </select>
+                                <small>Для Marzban укажите URL панели и admin login/password.</small>
+                            </div>
+							<div class="form-group">
 								<label for="host_url">URL панели Hiddify:</label>
 								<input type="url" id="host_url" name="host_url" placeholder="https://panel.example.com/secret-path/admin-uuid/" required />
 								<small>Можно указать полный admin URL Hiddify. Тогда proxy path и API key будут автоматически понятны из адреса.</small>
 							</div>
+                            <div class="form-group">
+                                <label for="host_username">Admin username (для Marzban):</label>
+                                <input type="text" id="host_username" name="host_username" placeholder="admin" />
+                            </div>
+                            <div class="form-group">
+                                <label for="host_pass">Admin password (для Marzban):</label>
+                                <input type="password" id="host_pass" name="host_pass" placeholder="password" />
+                            </div>
 							<div class="form-group">
 								<label for="host_api_key">Admin API key / UUID:</label>
 								<input type="text" id="host_api_key" name="host_api_key" placeholder="UUID администратора Hiddify" />
-								<input type="hidden" id="host_username" name="host_username" value="" />
 							</div>
 							<div class="form-group">
 								<label for="host_proxy_path">Admin proxy path:</label>
 								<input type="text" id="host_proxy_path" name="host_proxy_path" placeholder="admin-secret-path" />
-								<input type="hidden" id="host_pass" name="host_pass" value="" />
 							</div>
 							<div class="form-group">
 								<label for="host_client_proxy_path">Client proxy path:</label>
@@ -134,6 +148,17 @@
 								<input type="text" id="host_subscription_url" name="host_subscription_url" placeholder="например, https://sub.example.com/{uuid}" />
 								<small>Можно оставить пустым. Поддерживаются шаблоны {uuid}, {user_uuid}, {profile_url}, {subscription_url}.</small>
 							</div>
+                            <div class="form-group">
+                                <label for="ssh_deploy_script_add">Bash-скрипт автодеплоя (опционально):</label>
+                                <textarea id="ssh_deploy_script_add" name="ssh_deploy_script" rows="5" placeholder="apt-get update -y&#10;apt-get install -y docker.io docker-compose-plugin"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="ssh_deploy_script_file_add">Или загрузите .sh файл:</label>
+                                <input type="file" id="ssh_deploy_script_file_add" name="ssh_deploy_script_file" accept=".sh,.bash,text/x-shellscript,text/plain" />
+                            </div>
+                            <div class="form-group">
+                                <label><input type="checkbox" name="ssh_auto_deploy" value="1" /> Авто-запуск deploy-скрипта при сохранении SSH</label>
+                            </div>
 							<button type="submit" class="btn btn-primary">Добавить</button>
 						</form>
 					</div>
@@ -171,10 +196,16 @@
 				<form action="{{ url_for('update_host_hiddify_route') }}" method="post" class="form-inline" style="margin: 8px 0;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 					<input type="hidden" name="host_name" value="{{ host.host_name }}" />
+                    <select class="form-control pill" name="panel_type" style="margin-right:6px;">
+                        <option value="hiddify" {% if (host.panel_type or 'hiddify') == 'hiddify' %}selected{% endif %}>Hiddify</option>
+                        <option value="marzban" {% if (host.panel_type or '') == 'marzban' %}selected{% endif %}>Marzban</option>
+                    </select>
+                    <input class="form-control pill" type="text" name="host_username" placeholder="Marzban admin login" value="{{ host.host_username or '' }}" />
+                    <input class="form-control pill" type="password" name="host_pass" placeholder="Marzban admin password" value="{{ host.host_pass or '' }}" style="margin-left:6px;" />
 					<input class="form-control pill" type="text" name="host_api_key" placeholder="Admin API key / UUID" value="{{ host.host_api_key or '' }}" />
 					<input class="form-control pill" type="text" name="host_proxy_path" placeholder="Admin proxy path" value="{{ host.host_proxy_path or '' }}" style="margin-left:6px;" />
 					<input class="form-control pill" type="text" name="host_client_proxy_path" placeholder="Client proxy path" value="{{ host.host_client_proxy_path or '' }}" style="margin-left:6px;" />
-					<button type="submit" class="btn btn-outline-secondary btn-sm pill" style="margin-left:6px;">Сохранить Hiddify</button>
+					<button type="submit" class="btn btn-outline-secondary btn-sm pill" style="margin-left:6px;">Сохранить панель</button>
 				</form>
 
 				<!-- Переименование хоста -->
@@ -205,7 +236,7 @@
                 <div class="card glass" style="margin: 8px 0;">
                   <div class="card-body">
                     <h4 class="card-title" style="margin-bottom:8px;">SSH для Speedtest</h4>
-                    <form action="{{ url_for('update_host_ssh_route') }}" method="post" class="form-inline">
+                    <form action="{{ url_for('update_host_ssh_route') }}" method="post" enctype="multipart/form-data" class="form-inline">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                       <input type="hidden" name="host_name" value="{{ host.host_name }}" />
                       <div class="row g-2 align-items-end">
@@ -232,6 +263,10 @@
                         <div class="col-12">
                           <label class="form-label" for="ssh_deploy_script_{{ loop.index }}">Bash-скрипт автодеплоя (выполняется по SSH)</label>
                           <textarea id="ssh_deploy_script_{{ loop.index }}" class="form-control" name="ssh_deploy_script" rows="6" placeholder="apt-get update -y&#10;apt-get install -y docker.io docker-compose-plugin">{{ host.ssh_deploy_script or '' }}</textarea>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label" for="ssh_deploy_script_file_{{ loop.index }}">Загрузить .sh файл (заменит текст выше при сохранении)</label>
+                          <input id="ssh_deploy_script_file_{{ loop.index }}" type="file" class="form-control" name="ssh_deploy_script_file" accept=".sh,.bash,text/x-shellscript,text/plain" />
                         </div>
                         <div class="col-12">
                           <div class="form-check">

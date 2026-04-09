@@ -6,7 +6,7 @@ import uuid as uuid_lib
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import aiohttp
 
@@ -172,6 +172,166 @@ class HiddifyClient:
         return data or []
 
 
+@dataclass(frozen=True)
+class MarzbanHostConfig:
+    host_name: str
+    base_url: str
+    username: str
+    password: str
+    subscription_url: str | None = None
+
+    def api_url(self, suffix: str = "") -> str:
+        suffix = suffix.lstrip("/")
+        base = f"{self.base_url}/api"
+        return f"{base}/{suffix}" if suffix else f"{base}/"
+
+
+class MarzbanClient:
+    def __init__(self, config: MarzbanHostConfig):
+        self.config = config
+        self._session: aiohttp.ClientSession | None = None
+        self._access_token: str | None = None
+
+    async def __aenter__(self) -> "MarzbanClient":
+        self._session = aiohttp.ClientSession(timeout=REQUEST_TIMEOUT)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._session:
+            await self._session.close()
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        if not self._session:
+            raise RuntimeError("MarzbanClient session is not initialized")
+        return self._session
+
+    async def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        data_body: dict[str, Any] | None = None,
+        ok_statuses: tuple[int, ...] = (200,),
+        allow_missing: bool = False,
+    ) -> Any:
+        try:
+            async with self.session.request(
+                method,
+                url,
+                headers=headers,
+                json=json_body,
+                data=data_body,
+            ) as response:
+                text = await response.text()
+                if allow_missing and response.status == 404:
+                    return None
+                if response.status not in ok_statuses:
+                    raise HiddifyPanelError(
+                        f"{method} {url} returned {response.status}: {text[:300]}"
+                    )
+                if not text.strip():
+                    return None
+                try:
+                    return await response.json(content_type=None)
+                except Exception as exc:
+                    raise HiddifyPanelError(
+                        f"{method} {url} returned non-JSON response: {text[:300]}"
+                    ) from exc
+        except asyncio.TimeoutError as exc:
+            raise HiddifyPanelError(f"Timeout while calling Marzban API: {url}") from exc
+        except aiohttp.ClientError as exc:
+            raise HiddifyPanelError(f"HTTP error while calling Marzban API: {url} ({exc})") from exc
+
+    async def _ensure_token(self) -> str:
+        if self._access_token:
+            return self._access_token
+        payload = {
+            "username": self.config.username,
+            "password": self.config.password,
+            "grant_type": "password",
+        }
+        token_data = await self._request_json(
+            "POST",
+            self.config.api_url("admin/token"),
+            data_body=payload,
+            ok_statuses=(200,),
+        )
+        token = str((token_data or {}).get("access_token") or "").strip()
+        if not token:
+            raise HiddifyPanelError("Marzban token response does not include access_token")
+        self._access_token = token
+        return token
+
+    async def _auth_headers(self) -> dict[str, str]:
+        token = await self._ensure_token()
+        return {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+
+    async def list_users(self) -> list[dict[str, Any]]:
+        data = await self._request_json(
+            "GET",
+            self.config.api_url("users"),
+            headers=await self._auth_headers(),
+            allow_missing=True,
+        )
+        if isinstance(data, dict):
+            users = data.get("users") or []
+            return users if isinstance(users, list) else []
+        return data if isinstance(data, list) else []
+
+    async def get_user(self, username: str) -> dict[str, Any] | None:
+        if not username:
+            return None
+        return await self._request_json(
+            "GET",
+            self.config.api_url(f"user/{quote(username, safe='')}"),
+            headers=await self._auth_headers(),
+            allow_missing=True,
+        )
+
+    async def create_user(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request_json(
+            "POST",
+            self.config.api_url("user"),
+            headers=await self._auth_headers(),
+            json_body=payload,
+            ok_statuses=(200, 201),
+        )
+
+    async def update_user(self, username: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request_json(
+            "PUT",
+            self.config.api_url(f"user/{quote(username, safe='')}"),
+            headers=await self._auth_headers(),
+            json_body=payload,
+            ok_statuses=(200,),
+        )
+
+    async def delete_user(self, username: str) -> bool:
+        result = await self._request_json(
+            "DELETE",
+            self.config.api_url(f"user/{quote(username, safe='')}"),
+            headers=await self._auth_headers(),
+            ok_statuses=(200, 204),
+            allow_missing=True,
+        )
+        return result is None or bool(result)
+
+    async def get_inbounds(self) -> dict[str, Any]:
+        data = await self._request_json(
+            "GET",
+            self.config.api_url("inbounds"),
+            headers=await self._auth_headers(),
+            allow_missing=True,
+        )
+        return data if isinstance(data, dict) else {}
+
+
 def _looks_like_uuid(value: str | None) -> bool:
     if not value:
         return False
@@ -247,6 +407,36 @@ def _resolve_host_config(host_data: dict[str, Any]) -> HiddifyHostConfig:
     )
 
 
+def _resolve_marzban_config(host_data: dict[str, Any]) -> MarzbanHostConfig:
+    host_name = str(host_data.get("host_name") or "").strip()
+    base_url, _derived_proxy_path, _derived_api_key = _normalize_base_url(str(host_data.get("host_url") or ""))
+    username = str(host_data.get("host_username") or "").strip()
+    password = str(host_data.get("host_pass") or "")
+    if not username:
+        raise HiddifyPanelError(
+            f"Host '{host_name}' is missing Marzban admin username."
+        )
+    if not password:
+        raise HiddifyPanelError(
+            f"Host '{host_name}' is missing Marzban admin password."
+        )
+    subscription_url = (str(host_data.get("subscription_url") or "").strip() or None)
+    return MarzbanHostConfig(
+        host_name=host_name,
+        base_url=base_url,
+        username=username,
+        password=password,
+        subscription_url=subscription_url,
+    )
+
+
+def _get_host_panel_type(host_data: dict[str, Any] | None) -> str:
+    panel_type = str((host_data or {}).get("panel_type") or "").strip().lower()
+    if panel_type in ("marzban", "hiddify"):
+        return panel_type
+    return "hiddify"
+
+
 def login_to_host(host_url: str, username: str, password: str, inbound_id: int):
     try:
         config = _resolve_host_config(
@@ -270,6 +460,26 @@ def _user_expiry_datetime(user_data: dict[str, Any] | None) -> datetime | None:
     if not user_data:
         return None
 
+    # Marzban stores expiration as UTC timestamp in seconds.
+    expire_raw = user_data.get("expire")
+    if expire_raw is not None:
+        try:
+            expire_seconds = int(expire_raw)
+            if expire_seconds > 0:
+                return datetime.fromtimestamp(expire_seconds)
+            return None
+        except Exception:
+            pass
+
+    # Common ms-based fallback.
+    expiry_ms = user_data.get("expiry_timestamp_ms") or user_data.get("expiry_time")
+    if expiry_ms is not None:
+        try:
+            return datetime.fromtimestamp(int(expiry_ms) / 1000)
+        except Exception:
+            pass
+
+    # Hiddify-style start_date + package_days.
     start_date_raw = user_data.get("start_date")
     if not start_date_raw:
         return None
@@ -311,6 +521,7 @@ def _apply_subscription_override(
     user_uuid: str,
     profile_url: str | None,
     derived_link: str | None,
+    username: str | None = None,
 ) -> str | None:
     if not template:
         return derived_link or profile_url
@@ -320,6 +531,7 @@ def _apply_subscription_override(
         "{uuid}": user_uuid,
         "{user_uuid}": user_uuid,
         "{token}": user_uuid,
+        "{username}": username or user_uuid,
         "{profile_url}": profile_url or "",
         "{subscription_url}": derived_link or "",
     }
@@ -345,7 +557,13 @@ def _compute_target_expiry(
         raise HiddifyPanelError("Either days_to_add or expiry_timestamp_ms must be provided")
 
     current_expiry = _user_expiry_datetime(existing_user)
-    if current_expiry and bool(existing_user and existing_user.get("enable")) and current_expiry > now:
+    is_active = True
+    if existing_user:
+        if "enable" in existing_user:
+            is_active = bool(existing_user.get("enable"))
+        elif "status" in existing_user:
+            is_active = str(existing_user.get("status") or "").strip().lower() in ("active", "on_hold", "limited")
+    if current_expiry and is_active and current_expiry > now:
         return current_expiry + timedelta(days=days_to_add)
     return now + timedelta(days=days_to_add)
 
@@ -379,7 +597,7 @@ def _build_user_payload(
     return payload
 
 
-async def _find_existing_user(
+async def _find_existing_hiddify_user(
     client: HiddifyClient,
     *,
     email: str,
@@ -395,6 +613,150 @@ async def _find_existing_user(
         if str(user.get("name") or "").strip() == email:
             return user
     return None
+
+
+def _normalize_marzban_user(user_data: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(user_data, dict):
+        return None
+    normalized = dict(user_data)
+    username = str(normalized.get("username") or normalized.get("name") or "").strip()
+    if username:
+        normalized["username"] = username
+        normalized.setdefault("name", username)
+        normalized.setdefault("uuid", username)
+    expire_raw = normalized.get("expire")
+    try:
+        expire_seconds = int(expire_raw)
+        if expire_seconds > 0:
+            normalized.setdefault("expiry_timestamp_ms", expire_seconds * 1000)
+    except Exception:
+        pass
+    return normalized
+
+
+async def _find_existing_marzban_user(
+    client: MarzbanClient,
+    *,
+    email: str,
+    stored_identifier: str | None,
+) -> dict[str, Any] | None:
+    if stored_identifier:
+        user = _normalize_marzban_user(await client.get_user(stored_identifier))
+        if user:
+            return user
+
+    user_by_email = _normalize_marzban_user(await client.get_user(email))
+    if user_by_email:
+        return user_by_email
+
+    users = await client.list_users()
+    for user in users:
+        normalized = _normalize_marzban_user(user)
+        if not normalized:
+            continue
+        username = str(normalized.get("username") or "").strip()
+        name = str(normalized.get("name") or "").strip()
+        if username == email or name == email:
+            return normalized
+    return None
+
+
+def _extract_marzban_inbounds(raw_inbounds: dict[str, Any]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    if not isinstance(raw_inbounds, dict):
+        return result
+
+    for protocol, items in raw_inbounds.items():
+        protocol_name = str(protocol or "").strip().lower()
+        if not protocol_name or not isinstance(items, list):
+            continue
+        tags: list[str] = []
+        for item in items:
+            tag = ""
+            if isinstance(item, dict):
+                tag = str(item.get("tag") or "").strip()
+            elif isinstance(item, str):
+                tag = item.strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+        if tags:
+            result[protocol_name] = tags
+    return result
+
+
+def _select_default_marzban_profile(
+    inbounds_by_protocol: dict[str, list[str]],
+) -> tuple[dict[str, Any], dict[str, list[str]]]:
+    for preferred in ("vless", "trojan", "vmess", "shadowsocks"):
+        tags = inbounds_by_protocol.get(preferred) or []
+        if tags:
+            return {preferred: {}}, {preferred: tags}
+    for protocol, tags in inbounds_by_protocol.items():
+        if tags:
+            return {protocol: {}}, {protocol: tags}
+    return {}, {}
+
+
+def _build_marzban_user_payload(
+    username: str,
+    target_expiry_dt: datetime,
+    existing_user: dict[str, Any] | None,
+    inbounds_by_protocol: dict[str, list[str]],
+    *,
+    include_username: bool,
+) -> dict[str, Any]:
+    default_proxies, default_inbounds = _select_default_marzban_profile(inbounds_by_protocol)
+    proxies = (existing_user or {}).get("proxies") or default_proxies
+    inbounds = (existing_user or {}).get("inbounds") or default_inbounds
+    if not proxies:
+        raise HiddifyPanelError(
+            "Marzban panel has no enabled inbounds/protocols for user creation."
+        )
+
+    expire_seconds = int(target_expiry_dt.timestamp())
+    payload: dict[str, Any] = {
+        "status": "active" if target_expiry_dt > datetime.now() else "disabled",
+        "expire": expire_seconds if expire_seconds > 0 else 0,
+        "data_limit": int((existing_user or {}).get("data_limit") or 0),
+        "data_limit_reset_strategy": str(
+            (existing_user or {}).get("data_limit_reset_strategy") or "no_reset"
+        ),
+        "proxies": proxies,
+        "inbounds": inbounds,
+        "note": (existing_user or {}).get("note"),
+    }
+    if include_username:
+        payload["username"] = username
+    return payload
+
+
+def _build_marzban_fallback_link(config: MarzbanHostConfig, username: str) -> str:
+    return f"{config.base_url}/sub/{quote(username, safe='')}"
+
+
+def _build_marzban_connection_string(
+    config: MarzbanHostConfig,
+    user_data: dict[str, Any] | None,
+    *,
+    username: str,
+) -> str | None:
+    normalized = _normalize_marzban_user(user_data) or {}
+    sub_url = str(normalized.get("subscription_url") or "").strip() or None
+    links = normalized.get("links") if isinstance(normalized.get("links"), list) else []
+    first_link = None
+    for link in links or []:
+        text = str(link or "").strip()
+        if text:
+            first_link = text
+            break
+    base_link = sub_url or first_link or _build_marzban_fallback_link(config, username)
+    return _apply_subscription_override(
+        config.subscription_url,
+        user_uuid=username,
+        username=username,
+        profile_url=sub_url,
+        derived_link=base_link,
+    ) or base_link
 
 
 async def _get_connection_details(
@@ -420,6 +782,102 @@ async def _get_connection_details(
     return connection_string or _build_fallback_link(client.config, user_uuid), profile_url
 
 
+async def _create_or_update_key_on_hiddify(
+    host_name: str,
+    host_data: dict[str, Any],
+    email: str,
+    days_to_add: int | None,
+    expiry_timestamp_ms: int | None,
+    minimum_package_days: int,
+) -> dict[str, Any] | None:
+    config = _resolve_host_config(host_data)
+    stored_key = get_key_by_email(email) or {}
+    stored_uuid = str(stored_key.get("xui_client_uuid") or "").strip() or None
+
+    async with HiddifyClient(config) as client:
+        existing_user = await _find_existing_hiddify_user(client, email=email, stored_uuid=stored_uuid)
+        target_expiry_dt = _compute_target_expiry(
+            existing_user,
+            days_to_add=days_to_add,
+            expiry_timestamp_ms=expiry_timestamp_ms,
+        )
+        user_uuid = str((existing_user or {}).get("uuid") or stored_uuid or uuid_lib.uuid4())
+        payload = _build_user_payload(
+            user_uuid,
+            email,
+            target_expiry_dt,
+            existing_user,
+            minimum_package_days=minimum_package_days,
+        )
+
+        if existing_user:
+            response_user = await client.update_user(user_uuid, payload)
+        else:
+            response_user = await client.create_user(payload)
+
+        final_user = response_user or await client.get_user(user_uuid) or payload
+        final_expiry_ms = get_user_expiry_timestamp_ms(final_user) or int(target_expiry_dt.timestamp() * 1000)
+        connection_string, _profile_url = await _get_connection_details(client, user_uuid)
+        return {
+            "client_uuid": user_uuid,
+            "email": email,
+            "expiry_timestamp_ms": final_expiry_ms,
+            "connection_string": connection_string or _build_fallback_link(config, user_uuid),
+            "host_name": host_name,
+        }
+
+
+async def _create_or_update_key_on_marzban(
+    host_name: str,
+    host_data: dict[str, Any],
+    email: str,
+    days_to_add: int | None,
+    expiry_timestamp_ms: int | None,
+) -> dict[str, Any] | None:
+    config = _resolve_marzban_config(host_data)
+    stored_key = get_key_by_email(email) or {}
+    stored_identifier = str(stored_key.get("xui_client_uuid") or "").strip() or None
+
+    async with MarzbanClient(config) as client:
+        existing_user = await _find_existing_marzban_user(
+            client,
+            email=email,
+            stored_identifier=stored_identifier,
+        )
+        target_expiry_dt = _compute_target_expiry(
+            existing_user,
+            days_to_add=days_to_add,
+            expiry_timestamp_ms=expiry_timestamp_ms,
+        )
+
+        username = str((existing_user or {}).get("username") or stored_identifier or email).strip() or email
+        inbounds_by_protocol = _extract_marzban_inbounds(await client.get_inbounds())
+        payload = _build_marzban_user_payload(
+            username=username,
+            target_expiry_dt=target_expiry_dt,
+            existing_user=existing_user,
+            inbounds_by_protocol=inbounds_by_protocol,
+            include_username=not bool(existing_user),
+        )
+
+        if existing_user:
+            response_user = await client.update_user(username, payload)
+        else:
+            response_user = await client.create_user(payload)
+
+        final_user = _normalize_marzban_user(response_user) or _normalize_marzban_user(await client.get_user(username)) or payload
+        final_username = str((final_user or {}).get("username") or username).strip() or username
+        final_expiry_ms = get_user_expiry_timestamp_ms(final_user) or int(target_expiry_dt.timestamp() * 1000)
+        connection_string = _build_marzban_connection_string(config, final_user, username=final_username)
+        return {
+            "client_uuid": final_username,
+            "email": email,
+            "expiry_timestamp_ms": final_expiry_ms,
+            "connection_string": connection_string or _build_marzban_fallback_link(config, final_username),
+            "host_name": host_name,
+        }
+
+
 async def create_or_update_key_on_host(
     host_name: str,
     email: str,
@@ -432,51 +890,28 @@ async def create_or_update_key_on_host(
         logger.error("Host '%s' not found in the database.", host_name)
         return None
 
+    panel_type = _get_host_panel_type(host_data)
     try:
-        config = _resolve_host_config(host_data)
-    except Exception as exc:
-        logger.error("Hiddify config for host '%s' is invalid: %s", host_name, exc)
-        return None
-
-    stored_key = get_key_by_email(email) or {}
-    stored_uuid = str(stored_key.get("xui_client_uuid") or "").strip() or None
-
-    try:
-        async with HiddifyClient(config) as client:
-            existing_user = await _find_existing_user(client, email=email, stored_uuid=stored_uuid)
-            target_expiry_dt = _compute_target_expiry(
-                existing_user,
+        if panel_type == "marzban":
+            return await _create_or_update_key_on_marzban(
+                host_name=host_name,
+                host_data=host_data,
+                email=email,
                 days_to_add=days_to_add,
                 expiry_timestamp_ms=expiry_timestamp_ms,
             )
-            user_uuid = str((existing_user or {}).get("uuid") or stored_uuid or uuid_lib.uuid4())
-            payload = _build_user_payload(
-                user_uuid,
-                email,
-                target_expiry_dt,
-                existing_user,
-                minimum_package_days=minimum_package_days,
-            )
-
-            if existing_user:
-                response_user = await client.update_user(user_uuid, payload)
-            else:
-                response_user = await client.create_user(payload)
-
-            final_user = response_user or await client.get_user(user_uuid) or payload
-            final_expiry_ms = get_user_expiry_timestamp_ms(final_user) or int(target_expiry_dt.timestamp() * 1000)
-            connection_string, _profile_url = await _get_connection_details(client, user_uuid)
-
-            return {
-                "client_uuid": user_uuid,
-                "email": email,
-                "expiry_timestamp_ms": final_expiry_ms,
-                "connection_string": connection_string or _build_fallback_link(config, user_uuid),
-                "host_name": host_name,
-            }
+        return await _create_or_update_key_on_hiddify(
+            host_name=host_name,
+            host_data=host_data,
+            email=email,
+            days_to_add=days_to_add,
+            expiry_timestamp_ms=expiry_timestamp_ms,
+            minimum_package_days=minimum_package_days,
+        )
     except Exception as exc:
         logger.error(
-            "Failed to create/update Hiddify user '%s' on host '%s': %s",
+            "Failed to create/update %s user '%s' on host '%s': %s",
+            panel_type,
             email,
             host_name,
             exc,
@@ -496,17 +931,36 @@ async def get_key_details_from_host(key_data: dict[str, Any]) -> dict[str, Any] 
         logger.error("Host '%s' not found while loading key details.", host_name)
         return None
 
-    user_uuid = str(key_data.get("xui_client_uuid") or "").strip()
-    if not user_uuid:
-        logger.error("Key %s has no stored user UUID.", key_data.get("key_id"))
+    panel_type = _get_host_panel_type(host_data)
+    identifier = str(
+        key_data.get("xui_client_uuid")
+        or key_data.get("key_email")
+        or ""
+    ).strip()
+    if not identifier:
+        logger.error("Key %s has no stored user identifier.", key_data.get("key_id"))
         return None
 
     try:
+        if panel_type == "marzban":
+            config = _resolve_marzban_config(host_data)
+            async with MarzbanClient(config) as client:
+                user = _normalize_marzban_user(await client.get_user(identifier))
+                if not user:
+                    email = str(key_data.get("key_email") or "").strip()
+                    if email and email != identifier:
+                        user = _normalize_marzban_user(await client.get_user(email))
+                username = str((user or {}).get("username") or identifier).strip() or identifier
+                connection_string = _build_marzban_connection_string(config, user, username=username)
+                return {
+                    "connection_string": connection_string or _build_marzban_fallback_link(config, username),
+                }
+
         config = _resolve_host_config(host_data)
         async with HiddifyClient(config) as client:
-            connection_string, profile_url = await _get_connection_details(client, user_uuid)
+            connection_string, profile_url = await _get_connection_details(client, identifier)
             return {
-                "connection_string": connection_string or profile_url or _build_fallback_link(config, user_uuid)
+                "connection_string": connection_string or profile_url or _build_fallback_link(config, identifier)
             }
     except Exception as exc:
         logger.error(
@@ -527,11 +981,29 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
 
     key_data = get_key_by_email(client_email) or {}
     stored_uuid = str(key_data.get("xui_client_uuid") or "").strip() or None
+    panel_type = _get_host_panel_type(host_data)
 
     try:
+        if panel_type == "marzban":
+            config = _resolve_marzban_config(host_data)
+            async with MarzbanClient(config) as client:
+                user = await _find_existing_marzban_user(
+                    client,
+                    email=client_email,
+                    stored_identifier=stored_uuid,
+                )
+                if not user:
+                    logger.info("User '%s' is already absent on host '%s'.", client_email, host_name)
+                    return True
+                username = str(user.get("username") or client_email).strip()
+                deleted = await client.delete_user(username)
+                if deleted:
+                    logger.info("User '%s' deleted from host '%s'.", client_email, host_name)
+                return deleted
+
         config = _resolve_host_config(host_data)
         async with HiddifyClient(config) as client:
-            user = await _find_existing_user(client, email=client_email, stored_uuid=stored_uuid)
+            user = await _find_existing_hiddify_user(client, email=client_email, stored_uuid=stored_uuid)
             if not user:
                 logger.info("User '%s' is already absent on host '%s'.", client_email, host_name)
                 return True
@@ -541,7 +1013,8 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
             return deleted
     except Exception as exc:
         logger.error(
-            "Failed to delete Hiddify user '%s' from host '%s': %s",
+            "Failed to delete %s user '%s' from host '%s': %s",
+            panel_type,
             client_email,
             host_name,
             exc,
@@ -553,13 +1026,25 @@ async def delete_client_on_host(host_name: str, client_email: str) -> bool:
 async def list_users_on_host(host_name: str) -> list[dict[str, Any]] | None:
     host_data = get_host(host_name)
     if not host_data:
-        logger.error("Host '%s' not found while listing Hiddify users.", host_name)
+        logger.error("Host '%s' not found while listing panel users.", host_name)
         return None
 
+    panel_type = _get_host_panel_type(host_data)
     try:
+        if panel_type == "marzban":
+            config = _resolve_marzban_config(host_data)
+            async with MarzbanClient(config) as client:
+                users = await client.list_users()
+                normalized: list[dict[str, Any]] = []
+                for user in users:
+                    fixed = _normalize_marzban_user(user)
+                    if fixed:
+                        normalized.append(fixed)
+                return normalized
+
         config = _resolve_host_config(host_data)
         async with HiddifyClient(config) as client:
             return await client.list_users()
     except Exception as exc:
-        logger.error("Failed to list Hiddify users for host '%s': %s", host_name, exc, exc_info=True)
+        logger.error("Failed to list %s users for host '%s': %s", panel_type, host_name, exc, exc_info=True)
         return None

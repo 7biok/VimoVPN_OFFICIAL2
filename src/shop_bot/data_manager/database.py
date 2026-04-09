@@ -1220,6 +1220,8 @@ def update_host_hiddify_settings(
     proxy_path: str | None = None,
     client_proxy_path: str | None = None,
     panel_type: str = "hiddify",
+    host_username: str | None = None,
+    host_pass: str | None = None,
 ) -> bool:
     try:
         host_name_n = normalize_host_name(host_name)
@@ -1233,7 +1235,8 @@ def update_host_hiddify_settings(
             cursor.execute(
                 """
                 UPDATE xui_hosts
-                SET panel_type = ?, host_api_key = ?, host_proxy_path = ?, host_client_proxy_path = ?
+                SET panel_type = ?, host_api_key = ?, host_proxy_path = ?, host_client_proxy_path = ?,
+                    host_username = ?, host_pass = ?
                 WHERE TRIM(host_name) = TRIM(?)
                 """,
                 (
@@ -1241,6 +1244,8 @@ def update_host_hiddify_settings(
                     (api_key or "").strip() or None,
                     (proxy_path or "").strip().strip("/") or None,
                     (client_proxy_path or "").strip().strip("/") or None,
+                    (host_username or "").strip() or None,
+                    (host_pass if host_pass is not None else None),
                     host_name_n,
                 ),
             )

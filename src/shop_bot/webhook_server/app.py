@@ -242,6 +242,28 @@ def create_webhook_app(bot_controller_instance):
     def _public_bot_username() -> str:
         return str(get_setting("telegram_bot_username") or "").strip().lstrip("@")
 
+    def _load_uploaded_script_text(field_name: str) -> str | None:
+        uploaded = request.files.get(field_name)
+        if not uploaded or not getattr(uploaded, "filename", ""):
+            return None
+        try:
+            raw = uploaded.read()
+        except Exception:
+            return None
+        if not raw:
+            return None
+        if len(raw) > 512 * 1024:
+            raise ValueError("Deploy script file is too large (max 512KB).")
+        for encoding in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
+            try:
+                text = raw.decode(encoding)
+                break
+            except Exception:
+                text = None
+        if text is None:
+            raise ValueError("Unable to decode deploy script file.")
+        return text.strip() or None
+
     def _resolve_instant_access_config() -> dict:
         settings = get_all_settings()
         host_name = str(settings.get("instant_access_host_name") or "").strip()
@@ -1491,6 +1513,13 @@ def create_webhook_app(bot_controller_instance):
         ssh_password = request.form.get('ssh_password')  # allow empty to clear
         ssh_key_path = (request.form.get('ssh_key_path') or '').strip() or None
         ssh_deploy_script = (request.form.get('ssh_deploy_script') or '').strip() or None
+        try:
+            uploaded_script = _load_uploaded_script_text('ssh_deploy_script_file')
+            if uploaded_script is not None:
+                ssh_deploy_script = uploaded_script
+        except ValueError as exc:
+            flash(str(exc), 'warning')
+            return redirect(request.referrer or url_for('settings_page'))
         ssh_auto_deploy = (request.form.get('ssh_auto_deploy') or '').strip().lower() in ('1', 'true', 'on', 'yes')
         deploy_now = (request.form.get('deploy_now') or '').strip().lower() in ('1', 'true', 'on', 'yes')
         ssh_port = None
@@ -1976,9 +2005,14 @@ def create_webhook_app(bot_controller_instance):
     @login_required
     def update_host_hiddify_route():
         host_name = (request.form.get('host_name') or '').strip()
+        panel_type = (request.form.get('panel_type') or 'hiddify').strip().lower()
+        if panel_type not in ('hiddify', 'marzban'):
+            panel_type = 'hiddify'
         api_key = (request.form.get('host_api_key') or '').strip()
         proxy_path = (request.form.get('host_proxy_path') or '').strip().strip('/')
         client_proxy_path = (request.form.get('host_client_proxy_path') or '').strip().strip('/')
+        host_username = (request.form.get('host_username') or '').strip() or None
+        host_pass = request.form.get('host_pass')
         if not host_name:
             flash('Не указан хост для обновления Hiddify-настроек.', 'warning')
             return redirect(url_for('settings_page', tab='hosts'))
@@ -1987,9 +2021,12 @@ def create_webhook_app(bot_controller_instance):
             api_key=api_key or None,
             proxy_path=proxy_path or None,
             client_proxy_path=client_proxy_path or None,
+            panel_type=panel_type,
+            host_username=host_username,
+            host_pass=host_pass,
         )
         flash(
-            'Hiddify-настройки хоста обновлены.' if ok else 'Не удалось обновить Hiddify-настройки хоста.',
+            'Настройки панели хоста обновлены.' if ok else 'Не удалось обновить настройки панели хоста.',
             'success' if ok else 'danger'
         )
         return redirect(url_for('settings_page', tab='hosts'))
@@ -2223,19 +2260,30 @@ def create_webhook_app(bot_controller_instance):
     @flask_app.route('/add-host', methods=['POST'])
     @login_required
     def add_host_route():
+        panel_type = (request.form.get('panel_type') or 'hiddify').strip().lower()
+        if panel_type not in ('hiddify', 'marzban'):
+            panel_type = 'hiddify'
+        ssh_deploy_script = (request.form.get('ssh_deploy_script') or '').strip() or None
+        try:
+            uploaded_script = _load_uploaded_script_text('ssh_deploy_script_file')
+            if uploaded_script is not None:
+                ssh_deploy_script = uploaded_script
+        except ValueError as exc:
+            flash(str(exc), 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
         create_host(
             name=request.form['host_name'],
             url=request.form['host_url'],
             user=(request.form.get('host_username') or '').strip() or None,
-            passwd=(request.form.get('host_pass') or '').strip() or None,
+            passwd=request.form.get('host_pass'),
             inbound=int(request.form.get('host_inbound_id') or 0),
             subscription_url=(request.form.get('host_subscription_url') or '').strip() or None,
-            panel_type='hiddify',
+            panel_type=panel_type,
             api_key=(request.form.get('host_api_key') or '').strip() or None,
             proxy_path=(request.form.get('host_proxy_path') or '').strip().strip('/') or None,
             client_proxy_path=(request.form.get('host_client_proxy_path') or '').strip().strip('/') or None,
             host_category=(request.form.get('host_category') or '').strip() or None,
-            ssh_deploy_script=(request.form.get('ssh_deploy_script') or '').strip() or None,
+            ssh_deploy_script=ssh_deploy_script,
             ssh_auto_deploy=(request.form.get('ssh_auto_deploy') or '').strip().lower() in ('1', 'true', 'on', 'yes'),
         )
         flash(f"Хост '{request.form['host_name']}' успешно добавлен.", 'success')
