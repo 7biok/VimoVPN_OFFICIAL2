@@ -1886,6 +1886,12 @@ def create_webhook_app(bot_controller_instance):
         hosts = get_all_hosts()
         for host in hosts:
             host['plans'] = get_plans_for_host(host['host_name'])
+            try:
+                keys_for_host = database.get_keys_for_host(host['host_name'])
+            except Exception:
+                keys_for_host = []
+            host['keys_count'] = len(keys_for_host or [])
+            host['panel_locked'] = host['keys_count'] > 0
             # добавить последний результат спидтеста в карточку
             try:
                 host['latest_speedtest'] = get_latest_speedtest(host['host_name'])
@@ -2016,6 +2022,21 @@ def create_webhook_app(bot_controller_instance):
         if not host_name:
             flash('Не указан хост для обновления Hiddify-настроек.', 'warning')
             return redirect(url_for('settings_page', tab='hosts'))
+
+        host_data = get_host(host_name)
+        if not host_data:
+            flash('Хост не найден.', 'danger')
+            return redirect(url_for('settings_page', tab='hosts'))
+
+        current_panel_type = (str(host_data.get('panel_type') or 'hiddify').strip().lower() or 'hiddify')
+        try:
+            is_connected_host = bool(database.get_keys_for_host(host_name))
+        except Exception:
+            is_connected_host = False
+        if is_connected_host and panel_type != current_panel_type:
+            flash('Тип панели нельзя менять у уже подключенного хоста (есть активные ключи).', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+
         ok = update_host_hiddify_settings(
             host_name,
             api_key=api_key or None,
@@ -2263,6 +2284,25 @@ def create_webhook_app(bot_controller_instance):
         panel_type = (request.form.get('panel_type') or 'hiddify').strip().lower()
         if panel_type not in ('hiddify', 'marzban'):
             panel_type = 'hiddify'
+        host_name = (request.form.get('host_name') or '').strip()
+        host_url = (request.form.get('host_url') or '').strip()
+        host_username = (request.form.get('host_username') or '').strip() or None
+        host_pass = request.form.get('host_pass')
+
+        if not host_name:
+            flash('Шаг 1: укажите название хоста.', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+        if not host_url:
+            flash('Шаг 2: укажите URL панели.', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+        if panel_type == 'marzban':
+            if not host_username:
+                flash('Шаг 2: для Marzban требуется admin username.', 'warning')
+                return redirect(url_for('settings_page', tab='hosts'))
+            if not host_pass:
+                flash('Шаг 2: для Marzban требуется admin password.', 'warning')
+                return redirect(url_for('settings_page', tab='hosts'))
+
         ssh_deploy_script = (request.form.get('ssh_deploy_script') or '').strip() or None
         try:
             uploaded_script = _load_uploaded_script_text('ssh_deploy_script_file')
@@ -2272,10 +2312,10 @@ def create_webhook_app(bot_controller_instance):
             flash(str(exc), 'warning')
             return redirect(url_for('settings_page', tab='hosts'))
         create_host(
-            name=request.form['host_name'],
-            url=request.form['host_url'],
-            user=(request.form.get('host_username') or '').strip() or None,
-            passwd=request.form.get('host_pass'),
+            name=host_name,
+            url=host_url,
+            user=host_username,
+            passwd=host_pass,
             inbound=int(request.form.get('host_inbound_id') or 0),
             subscription_url=(request.form.get('host_subscription_url') or '').strip() or None,
             panel_type=panel_type,

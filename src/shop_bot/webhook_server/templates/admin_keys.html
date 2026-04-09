@@ -643,9 +643,28 @@
       const m = document.querySelector('meta[name="csrf-token"]');
       return m ? m.getAttribute('content') : '';
     }
+    function hideModalHard(modalEl){
+      try { window.bootstrap?.Modal?.getOrCreateInstance(modalEl)?.hide(); } catch(_){}
+      setTimeout(() => {
+        try {
+          modalEl.classList.remove('show');
+          modalEl.style.display = 'none';
+          document.body.classList.remove('modal-open');
+          document.body.style.removeProperty('padding-right');
+          document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+        } catch(_) {}
+      }, 80);
+    }
+    function refreshKeysTable(){
+      try {
+        if (window.refreshContainerById) return window.refreshContainerById('keys-tbody');
+      } catch(_) {}
+      return Promise.resolve();
+    }
     const modalEl = document.getElementById('expiryModal');
     const inputEl = document.getElementById('expiryDelta');
     const saveBtn = document.getElementById('expirySaveBtn');
+    if (!modalEl || !inputEl || !saveBtn) return;
     let currentKeyId = null;
 
     document.addEventListener('click', (e)=>{
@@ -657,7 +676,7 @@
         try { window.showToast('danger', 'Не найден Bootstrap Modal (JS не загружен)'); } catch(_) {}
         return;
       }
-      try { new window.bootstrap.Modal(modalEl).show(); } catch(_){ }
+      try { window.bootstrap.Modal.getOrCreateInstance(modalEl).show(); } catch(_){ }
     });
 
     async function doSave(){
@@ -692,9 +711,9 @@
               }
             }
           } catch(_){ }
-          try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch(_){ }
+          hideModalHard(modalEl);
           try { window.showToast('success', 'Срок обновлён'); } catch(_){ }
-          try { await refreshContainerById('keys-tbody'); } catch(_){ }
+          try { await refreshKeysTable(); } catch(_){ }
         } else {
           let msg = 'Не удалось обновить срок';
           try { const data = await resp.json(); if (data && data.error) msg += `: ${data.error}`; } catch(_){}
@@ -704,6 +723,15 @@
       finally { saveBtn.disabled = false; saveBtn.textContent = 'Сохранить'; }
     }
     if (saveBtn) saveBtn.addEventListener('click', doSave);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doSave();
+      }
+    });
+    modalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach((btn) => {
+      btn.addEventListener('click', () => hideModalHard(modalEl));
+    });
   })();
 </script>
 
@@ -728,9 +756,28 @@
 
 <script>
   (function(){
+    function hideModalHard(modalEl){
+      try { window.bootstrap?.Modal?.getOrCreateInstance(modalEl)?.hide(); } catch(_){}
+      setTimeout(() => {
+        try {
+          modalEl.classList.remove('show');
+          modalEl.style.display = 'none';
+          document.body.classList.remove('modal-open');
+          document.body.style.removeProperty('padding-right');
+          document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+        } catch(_) {}
+      }, 80);
+    }
+    function refreshKeysTable(){
+      try {
+        if (window.refreshContainerById) return window.refreshContainerById('keys-tbody');
+      } catch(_) {}
+      return Promise.resolve();
+    }
     const modalEl = document.getElementById('commentModal');
     const inputEl = document.getElementById('commentInput');
     const saveBtn = document.getElementById('commentSaveBtn');
+    if (!modalEl || !inputEl || !saveBtn) return;
     let currentKeyId = null;
 
     function getCsrf(){
@@ -748,7 +795,7 @@
         try { window.showToast('danger', 'Не найден Bootstrap Modal (JS не загружен)'); } catch(_) {}
         return;
       }
-      try { new window.bootstrap.Modal(modalEl).show(); } catch(_){ }
+      try { window.bootstrap.Modal.getOrCreateInstance(modalEl).show(); } catch(_){ }
     });
 
     async function saveComment(){
@@ -761,8 +808,8 @@
       try {
         const resp = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
         if (resp.ok) {
-          try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch(_){ }
-          try { await refreshContainerById('keys-tbody'); } catch(_){ }
+          hideModalHard(modalEl);
+          try { await refreshKeysTable(); } catch(_){ }
           try { window.showToast('success', 'Комментарий сохранён'); } catch(_){ }
         } else {
           let msg = 'Не удалось сохранить комментарий';
@@ -777,6 +824,15 @@
     }
 
     if (saveBtn) saveBtn.addEventListener('click', saveComment);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveComment();
+      }
+    });
+    modalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach((btn) => {
+      btn.addEventListener('click', () => hideModalHard(modalEl));
+    });
   })();
 </script>
 

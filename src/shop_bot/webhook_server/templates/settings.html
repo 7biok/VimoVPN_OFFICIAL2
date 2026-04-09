@@ -86,6 +86,44 @@
     border-color: rgba(255,255,255,.18) !important;
     box-shadow: none !important;
   }
+
+  .host-wizard-progress {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .host-wizard-progress .step {
+    flex: 1;
+    text-align: center;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: rgba(255,255,255,.04);
+    color: rgba(255,255,255,.72);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .host-wizard-progress .step.is-active {
+    background: rgba(21, 128, 255, .16);
+    color: #fff;
+    border-color: rgba(21, 128, 255, .32);
+  }
+  .host-wizard-step.d-none {
+    display: none !important;
+  }
+  .host-wizard-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .host-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: rgba(255,255,255,.72);
+    font-size: 12px;
+  }
 </style>
 
 <div class="settings-container">
@@ -97,76 +135,111 @@
 				<div class="col-12 col-lg-5">
 					<div class="host-card">
 						<h4>Добавить новый хост</h4>
-						<form action="{{ url_for('add_host_route') }}" method="post" enctype="multipart/form-data">
+						<form action="{{ url_for('add_host_route') }}" method="post" enctype="multipart/form-data" id="add-host-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-							<div class="form-group">
-								<label for="host_name">Название хоста:</label>
-								<input type="text" id="host_name" name="host_name" required />
-							</div>
-                            <div class="form-group">
-                                <label for="host_category">Категория:</label>
-                                <input type="text" id="host_category" name="host_category" placeholder="Например: Европа, Азия, VIP" />
-                                <small>Категория будет показана в Telegram-боте при выборе сервера.</small>
+                            <div class="host-wizard-progress" id="add-host-wizard-progress">
+                                <div class="step is-active" data-step-marker="1">Шаг 1: Базовые данные</div>
+                                <div class="step" data-step-marker="2">Шаг 2: Панель</div>
+                                <div class="step" data-step-marker="3">Шаг 3: Deploy</div>
                             </div>
-							<div class="form-group">
-                                <label for="panel_type">Тип панели:</label>
-                                <select id="panel_type" name="panel_type">
-                                    <option value="hiddify" selected>Hiddify</option>
-                                    <option value="marzban">Marzban</option>
-                                </select>
-                                <small>Для Marzban укажите URL панели и admin login/password.</small>
+
+                            <div class="host-wizard-step" data-step="1">
+                                <div class="form-group">
+                                    <label for="add_host_name">Название хоста:</label>
+                                    <input type="text" id="add_host_name" name="host_name" required />
+                                </div>
+                                <div class="form-group">
+                                    <label for="add_host_category">Категория:</label>
+                                    <input type="text" id="add_host_category" name="host_category" placeholder="Например: Европа, Азия, VIP" />
+                                    <small>Категория используется для группировки и фильтрации хостов.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="add_panel_type">Тип панели:</label>
+                                    <select id="add_panel_type" name="panel_type">
+                                        <option value="hiddify" selected>Hiddify</option>
+                                        <option value="marzban">Marzban</option>
+                                    </select>
+                                    <small>После подключения хоста тип панели менять нельзя.</small>
+                                </div>
                             </div>
-							<div class="form-group">
-								<label for="host_url">URL панели Hiddify:</label>
-								<input type="url" id="host_url" name="host_url" placeholder="https://panel.example.com/secret-path/admin-uuid/" required />
-								<small>Можно указать полный admin URL Hiddify. Тогда proxy path и API key будут автоматически понятны из адреса.</small>
-							</div>
-                            <div class="form-group">
-                                <label for="host_username">Admin username (для Marzban):</label>
-                                <input type="text" id="host_username" name="host_username" placeholder="admin" />
+
+                            <div class="host-wizard-step d-none" data-step="2">
+                                <div class="form-group" data-panel-group data-panel-for="all">
+                                    <label for="add_host_url">URL панели:</label>
+                                    <input type="url" id="add_host_url" name="host_url" placeholder="https://panel.example.com/" required />
+                                </div>
+                                <div class="form-group" data-panel-group data-panel-for="marzban">
+                                    <label for="add_host_username">Admin username (Marzban):</label>
+                                    <input type="text" id="add_host_username" name="host_username" placeholder="admin" />
+                                </div>
+                                <div class="form-group" data-panel-group data-panel-for="marzban">
+                                    <label for="add_host_pass">Admin password (Marzban):</label>
+                                    <input type="password" id="add_host_pass" name="host_pass" placeholder="password" />
+                                </div>
+                                <div class="form-group" data-panel-group data-panel-for="hiddify">
+                                    <label for="add_host_api_key">Admin API key / UUID (Hiddify):</label>
+                                    <input type="text" id="add_host_api_key" name="host_api_key" placeholder="UUID администратора Hiddify" />
+                                </div>
+                                <div class="form-group" data-panel-group data-panel-for="hiddify">
+                                    <label for="add_host_proxy_path">Admin proxy path (Hiddify):</label>
+                                    <input type="text" id="add_host_proxy_path" name="host_proxy_path" placeholder="admin-secret-path" />
+                                </div>
+                                <div class="form-group" data-panel-group data-panel-for="hiddify">
+                                    <label for="add_host_client_proxy_path">Client proxy path (Hiddify):</label>
+                                    <input type="text" id="add_host_client_proxy_path" name="host_client_proxy_path" placeholder="client-secret-path" />
+                                </div>
+                                <input type="hidden" id="host_inbound_id" name="host_inbound_id" value="0" />
                             </div>
-                            <div class="form-group">
-                                <label for="host_pass">Admin password (для Marzban):</label>
-                                <input type="password" id="host_pass" name="host_pass" placeholder="password" />
+
+                            <div class="host-wizard-step d-none" data-step="3">
+                                <div class="form-group">
+                                    <label for="add_host_subscription_url">Переопределение ссылки подписки:</label>
+                                    <input type="text" id="add_host_subscription_url" name="host_subscription_url" placeholder="например, https://sub.example.com/{uuid}" />
+                                    <small>Поддерживаются шаблоны {uuid}, {user_uuid}, {username}, {profile_url}, {subscription_url}.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ssh_deploy_script_add">Bash-скрипт автодеплоя:</label>
+                                    <textarea id="ssh_deploy_script_add" name="ssh_deploy_script" rows="5" placeholder="apt-get update -y&#10;apt-get install -y docker.io docker-compose-plugin"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="ssh_deploy_script_file_add">Или загрузите .sh файл:</label>
+                                    <input type="file" id="ssh_deploy_script_file_add" name="ssh_deploy_script_file" accept=".sh,.bash,text/x-shellscript,text/plain" />
+                                </div>
+                                <div class="form-group">
+                                    <label><input type="checkbox" name="ssh_auto_deploy" value="1" /> Авто-запуск deploy-скрипта при сохранении SSH</label>
+                                </div>
                             </div>
-							<div class="form-group">
-								<label for="host_api_key">Admin API key / UUID:</label>
-								<input type="text" id="host_api_key" name="host_api_key" placeholder="UUID администратора Hiddify" />
-							</div>
-							<div class="form-group">
-								<label for="host_proxy_path">Admin proxy path:</label>
-								<input type="text" id="host_proxy_path" name="host_proxy_path" placeholder="admin-secret-path" />
-							</div>
-							<div class="form-group">
-								<label for="host_client_proxy_path">Client proxy path:</label>
-								<input type="text" id="host_client_proxy_path" name="host_client_proxy_path" placeholder="client-secret-path" />
-								<small>Нужен для рабочих пользовательских ссылок. В Hiddify он часто отличается от admin path.</small>
-							</div>
-							<input type="hidden" id="host_inbound_id" name="host_inbound_id" value="0" />
-							<div class="form-group">
-								<label for="host_subscription_url">Переопределение ссылки подписки:</label>
-								<input type="text" id="host_subscription_url" name="host_subscription_url" placeholder="например, https://sub.example.com/{uuid}" />
-								<small>Можно оставить пустым. Поддерживаются шаблоны {uuid}, {user_uuid}, {profile_url}, {subscription_url}.</small>
-							</div>
-                            <div class="form-group">
-                                <label for="ssh_deploy_script_add">Bash-скрипт автодеплоя (опционально):</label>
-                                <textarea id="ssh_deploy_script_add" name="ssh_deploy_script" rows="5" placeholder="apt-get update -y&#10;apt-get install -y docker.io docker-compose-plugin"></textarea>
+
+                            <div class="host-wizard-actions">
+                                <button type="button" class="btn btn-outline-secondary d-none" id="add-host-prev">Назад</button>
+                                <button type="button" class="btn btn-primary" id="add-host-next">Далее</button>
+                                <button type="submit" class="btn btn-primary d-none" id="add-host-submit">Добавить хост</button>
                             </div>
-                            <div class="form-group">
-                                <label for="ssh_deploy_script_file_add">Или загрузите .sh файл:</label>
-                                <input type="file" id="ssh_deploy_script_file_add" name="ssh_deploy_script_file" accept=".sh,.bash,text/x-shellscript,text/plain" />
-                            </div>
-                            <div class="form-group">
-                                <label><input type="checkbox" name="ssh_auto_deploy" value="1" /> Авто-запуск deploy-скрипта при сохранении SSH</label>
-                            </div>
-							<button type="submit" class="btn btn-primary">Добавить</button>
 						</form>
 					</div>
 				</div>
 				<div class="col-12 col-lg-7">
+                    <div class="host-card mb-2">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="host-category-filter">Фильтр параметров по категории:</label>
+                            <select id="host-category-filter">
+                                <option value="">Все категории</option>
+                                {% set ns = namespace(cats=[]) %}
+                                {% for h in hosts %}
+                                    {% set cat = (h.host_category or 'Без категории')|trim %}
+                                    {% if cat and cat not in ns.cats %}
+                                        {% set ns.cats = ns.cats + [cat] %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% for cat in ns.cats|sort %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
 					{% if hosts %}
 						{% for host in hosts %}
-						<div class="host-card">
+						<div class="host-card" data-host-card data-host-name="{{ host.host_name }}" data-host-category="{{ (host.host_category or 'Без категории')|trim }}">
 				<div class="host-header">
 					<h3>{{ host.host_name }}</h3>
 					<form
@@ -180,6 +253,11 @@
 						</button>
 					</form>
 				</div>
+                <div class="host-meta-row">
+                    <span>Категория: <strong>{{ host.host_category or 'Без категории' }}</strong></span>
+                    <span>Ключей на хосте: <strong>{{ host.keys_count or 0 }}</strong></span>
+                    <span>Панель: <strong>{{ (host.panel_type or 'hiddify')|upper }}</strong></span>
+                </div>
 				<!-- Редактирование URL панели Hiddify -->
 				<form action="{{ url_for('update_host_url_route') }}" method="post" class="form-inline edit-row" data-edit-row>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -193,20 +271,26 @@
 					</div>
 				</form>
 
-				<form action="{{ url_for('update_host_hiddify_route') }}" method="post" class="form-inline" style="margin: 8px 0;">
+				<form action="{{ url_for('update_host_hiddify_route') }}" method="post" class="form-inline host-panel-form" style="margin: 8px 0;" data-panel-current="{{ (host.panel_type or 'hiddify')|lower }}" data-panel-locked="{{ 1 if host.panel_locked else 0 }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 					<input type="hidden" name="host_name" value="{{ host.host_name }}" />
-                    <select class="form-control pill" name="panel_type" style="margin-right:6px;">
+                    <select class="form-control pill host-panel-type-select" name="panel_type" style="margin-right:6px;" {% if host.panel_locked %}disabled{% endif %}>
                         <option value="hiddify" {% if (host.panel_type or 'hiddify') == 'hiddify' %}selected{% endif %}>Hiddify</option>
                         <option value="marzban" {% if (host.panel_type or '') == 'marzban' %}selected{% endif %}>Marzban</option>
                     </select>
-                    <input class="form-control pill" type="text" name="host_username" placeholder="Marzban admin login" value="{{ host.host_username or '' }}" />
-                    <input class="form-control pill" type="password" name="host_pass" placeholder="Marzban admin password" value="{{ host.host_pass or '' }}" style="margin-left:6px;" />
-					<input class="form-control pill" type="text" name="host_api_key" placeholder="Admin API key / UUID" value="{{ host.host_api_key or '' }}" />
-					<input class="form-control pill" type="text" name="host_proxy_path" placeholder="Admin proxy path" value="{{ host.host_proxy_path or '' }}" style="margin-left:6px;" />
-					<input class="form-control pill" type="text" name="host_client_proxy_path" placeholder="Client proxy path" value="{{ host.host_client_proxy_path or '' }}" style="margin-left:6px;" />
+                    {% if host.panel_locked %}
+                    <input type="hidden" name="panel_type" value="{{ (host.panel_type or 'hiddify')|lower }}" />
+                    {% endif %}
+                    <input class="form-control pill" type="text" name="host_username" placeholder="Marzban admin login" value="{{ host.host_username or '' }}" data-panel-group data-panel-for="marzban" />
+                    <input class="form-control pill" type="password" name="host_pass" placeholder="Marzban admin password" value="{{ host.host_pass or '' }}" style="margin-left:6px;" data-panel-group data-panel-for="marzban" />
+					<input class="form-control pill" type="text" name="host_api_key" placeholder="Admin API key / UUID" value="{{ host.host_api_key or '' }}" data-panel-group data-panel-for="hiddify" />
+					<input class="form-control pill" type="text" name="host_proxy_path" placeholder="Admin proxy path" value="{{ host.host_proxy_path or '' }}" style="margin-left:6px;" data-panel-group data-panel-for="hiddify" />
+					<input class="form-control pill" type="text" name="host_client_proxy_path" placeholder="Client proxy path" value="{{ host.host_client_proxy_path or '' }}" style="margin-left:6px;" data-panel-group data-panel-for="hiddify" />
 					<button type="submit" class="btn btn-outline-secondary btn-sm pill" style="margin-left:6px;">Сохранить панель</button>
 				</form>
+                {% if host.panel_locked %}
+                <small class="text-secondary">Тип панели зафиксирован: у хоста уже есть ключи, переключение между Hiddify/Marzban отключено.</small>
+                {% endif %}
 
 				<!-- Переименование хоста -->
 				<form action="{{ url_for('rename_host_route') }}" method="post" class="form-inline edit-row" data-edit-row>
@@ -1106,6 +1190,146 @@
       btn.setAttribute('aria-expanded', 'false');
     }
   });
+</script>
+
+<script>
+  (function () {
+    function normalizeCategory(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function applyPanelFieldVisibility(container, panelType) {
+      if (!container) return;
+      const panel = String(panelType || 'hiddify').trim().toLowerCase();
+      container.querySelectorAll('[data-panel-group]').forEach((field) => {
+        const forType = String(field.getAttribute('data-panel-for') || 'all').trim().toLowerCase();
+        const visible = forType === 'all' || forType === panel;
+        field.classList.toggle('d-none', !visible);
+      });
+    }
+
+    // 1) Фильтрация отображаемых параметров по категории
+    const categoryFilter = document.getElementById('host-category-filter');
+    if (categoryFilter) {
+      categoryFilter.addEventListener('change', function () {
+        const selected = normalizeCategory(categoryFilter.value);
+        document.querySelectorAll('[data-host-card]').forEach((card) => {
+          const cardCategory = normalizeCategory(card.getAttribute('data-host-category') || 'без категории');
+          const show = !selected || cardCategory === selected;
+          card.classList.toggle('d-none', !show);
+        });
+      });
+    }
+
+    // 2) В существующих хостах показываем только релевантные поля выбранной панели
+    document.querySelectorAll('.host-panel-form').forEach((form) => {
+      const select = form.querySelector('.host-panel-type-select');
+      const panelType = select ? select.value : (form.getAttribute('data-panel-current') || 'hiddify');
+      applyPanelFieldVisibility(form, panelType);
+      if (select) {
+        select.addEventListener('change', () => {
+          applyPanelFieldVisibility(form, select.value);
+        });
+      }
+    });
+
+    // 3) Пошаговое добавление хоста с проверкой каждого шага
+    const wizardForm = document.getElementById('add-host-form');
+    if (!wizardForm) return;
+
+    const steps = Array.from(wizardForm.querySelectorAll('.host-wizard-step'));
+    const markers = Array.from(document.querySelectorAll('[data-step-marker]'));
+    const btnPrev = document.getElementById('add-host-prev');
+    const btnNext = document.getElementById('add-host-next');
+    const btnSubmit = document.getElementById('add-host-submit');
+    const panelSelect = document.getElementById('add_panel_type');
+
+    let currentStep = 1;
+
+    function showStep(stepNumber) {
+      currentStep = Math.max(1, Math.min(steps.length, stepNumber));
+      steps.forEach((stepEl) => {
+        const step = Number(stepEl.getAttribute('data-step') || '1');
+        stepEl.classList.toggle('d-none', step !== currentStep);
+      });
+      markers.forEach((markerEl) => {
+        const step = Number(markerEl.getAttribute('data-step-marker') || '1');
+        markerEl.classList.toggle('is-active', step === currentStep);
+      });
+      if (btnPrev) btnPrev.classList.toggle('d-none', currentStep === 1);
+      if (btnNext) btnNext.classList.toggle('d-none', currentStep === steps.length);
+      if (btnSubmit) btnSubmit.classList.toggle('d-none', currentStep !== steps.length);
+    }
+
+    function validateStep(stepNumber) {
+      if (stepNumber === 1) {
+        const hostName = (wizardForm.querySelector('#add_host_name')?.value || '').trim();
+        if (!hostName) {
+          window.showToast?.('warning', 'Шаг 1: укажите название хоста.');
+          wizardForm.querySelector('#add_host_name')?.focus();
+          return false;
+        }
+        return true;
+      }
+      if (stepNumber === 2) {
+        const hostUrl = (wizardForm.querySelector('#add_host_url')?.value || '').trim();
+        if (!hostUrl) {
+          window.showToast?.('warning', 'Шаг 2: укажите URL панели.');
+          wizardForm.querySelector('#add_host_url')?.focus();
+          return false;
+        }
+        const panelType = (panelSelect?.value || 'hiddify').trim().toLowerCase();
+        if (panelType === 'marzban') {
+          const adminUser = (wizardForm.querySelector('#add_host_username')?.value || '').trim();
+          const adminPass = (wizardForm.querySelector('#add_host_pass')?.value || '');
+          if (!adminUser) {
+            window.showToast?.('warning', 'Шаг 2: для Marzban нужен admin username.');
+            wizardForm.querySelector('#add_host_username')?.focus();
+            return false;
+          }
+          if (!adminPass) {
+            window.showToast?.('warning', 'Шаг 2: для Marzban нужен admin password.');
+            wizardForm.querySelector('#add_host_pass')?.focus();
+            return false;
+          }
+        }
+        return true;
+      }
+      return true;
+    }
+
+    if (panelSelect) {
+      panelSelect.addEventListener('change', () => {
+        applyPanelFieldVisibility(wizardForm, panelSelect.value);
+      });
+      applyPanelFieldVisibility(wizardForm, panelSelect.value);
+    }
+
+    if (btnNext) {
+      btnNext.addEventListener('click', () => {
+        if (!validateStep(currentStep)) return;
+        showStep(currentStep + 1);
+      });
+    }
+    if (btnPrev) {
+      btnPrev.addEventListener('click', () => {
+        showStep(currentStep - 1);
+      });
+    }
+
+    wizardForm.addEventListener('submit', (event) => {
+      // Проверяем шаги последовательно перед отправкой
+      for (let s = 1; s <= steps.length; s += 1) {
+        if (!validateStep(s)) {
+          event.preventDefault();
+          showStep(s);
+          return;
+        }
+      }
+    });
+
+    showStep(1);
+  })();
 </script>
 
 {% endblock %}
