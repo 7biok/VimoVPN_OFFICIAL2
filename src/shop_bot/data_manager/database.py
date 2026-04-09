@@ -77,6 +77,7 @@ def initialize_db():
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS xui_hosts(
                     host_name TEXT NOT NULL,
+                    host_category TEXT,
                     host_url TEXT NOT NULL,
                     host_username TEXT NOT NULL DEFAULT '',
                     host_pass TEXT NOT NULL DEFAULT '',
@@ -90,7 +91,9 @@ def initialize_db():
                     ssh_port INTEGER,
                     ssh_user TEXT,
                     ssh_password TEXT,
-                    ssh_key_path TEXT
+                    ssh_key_path TEXT,
+                    ssh_deploy_script TEXT,
+                    ssh_auto_deploy INTEGER NOT NULL DEFAULT 0
                 )
             ''')
             cursor.execute('''
@@ -791,6 +794,15 @@ def run_migration():
             if 'ssh_key_path' not in xh_columns:
                 cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_key_path TEXT")
                 logging.info(" -> Столбец 'ssh_key_path' успешно добавлен в 'xui_hosts'.")
+            if 'host_category' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN host_category TEXT")
+                logging.info(" -> Столбец 'host_category' успешно добавлен в 'xui_hosts'.")
+            if 'ssh_deploy_script' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_deploy_script TEXT")
+                logging.info(" -> Столбец 'ssh_deploy_script' успешно добавлен в 'xui_hosts'.")
+            if 'ssh_auto_deploy' not in xh_columns:
+                cursor.execute("ALTER TABLE xui_hosts ADD COLUMN ssh_auto_deploy INTEGER NOT NULL DEFAULT 0")
+                logging.info(" -> Столбец 'ssh_auto_deploy' успешно добавлен в 'xui_hosts'.")
             # Clean up host_name values from invisible spaces and trim
             try:
                 cursor.execute(
@@ -1092,6 +1104,9 @@ def create_host(
     api_key: str | None = None,
     proxy_path: str | None = None,
     client_proxy_path: str | None = None,
+    host_category: str | None = None,
+    ssh_deploy_script: str | None = None,
+    ssh_auto_deploy: bool = False,
 ):
     try:
         name = normalize_host_name(name)
@@ -1111,8 +1126,9 @@ def create_host(
                     """
                     INSERT INTO xui_hosts (
                         host_name, host_url, host_username, host_pass, host_inbound_id,
-                        panel_type, host_api_key, host_proxy_path, host_client_proxy_path, subscription_url
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        panel_type, host_api_key, host_proxy_path, host_client_proxy_path, subscription_url,
+                        host_category, ssh_deploy_script, ssh_auto_deploy
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         name,
@@ -1125,6 +1141,9 @@ def create_host(
                         (proxy_path or "").strip().strip("/") or None,
                         (client_proxy_path or "").strip().strip("/") or None,
                         subscription_url,
+                        (host_category or "").strip() or None,
+                        (ssh_deploy_script or "").strip() or None,
+                        1 if bool(ssh_auto_deploy) else 0,
                     ),
                 )
             except sqlite3.OperationalError:
@@ -1301,6 +1320,8 @@ def update_host_ssh_settings(
     ssh_user: str | None = None,
     ssh_password: str | None = None,
     ssh_key_path: str | None = None,
+    ssh_deploy_script: str | None = None,
+    ssh_auto_deploy: bool | None = None,
 ) -> bool:
     """Обновить SSH-параметры для speedtest/maintenance по хосту.
     Переданные None значения очищают соответствующие поля (ставят NULL).
@@ -1309,26 +1330,62 @@ def update_host_ssh_settings(
         host_name_n = normalize_host_name(host_name)
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name_n,))
-            if cursor.fetchone() is None:
+            supports_deploy_columns = True
+            try:
+                cursor.execute(
+                    "SELECT ssh_deploy_script, ssh_auto_deploy FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)",
+                    (host_name_n,),
+                )
+                row = cursor.fetchone()
+            except sqlite3.OperationalError:
+                supports_deploy_columns = False
+                cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name_n,))
+                row = cursor.fetchone()
+            if row is None:
                 logging.warning(f"update_host_ssh_settings: хост не найден '{host_name_n}'")
                 return False
+            if supports_deploy_columns:
+                deploy_script_db = row[0]
+                auto_deploy_db = row[1]
+                if ssh_deploy_script is None:
+                    ssh_deploy_script = deploy_script_db
+                if ssh_auto_deploy is None:
+                    ssh_auto_deploy = bool(auto_deploy_db)
 
-            cursor.execute(
-                """
-                UPDATE xui_hosts
-                SET ssh_host = ?, ssh_port = ?, ssh_user = ?, ssh_password = ?, ssh_key_path = ?
-                WHERE TRIM(host_name) = TRIM(?)
-                """,
-                (
-                    (ssh_host or None),
-                    (int(ssh_port) if ssh_port is not None else None),
-                    (ssh_user or None),
-                    (ssh_password if ssh_password is not None else None),
-                    (ssh_key_path or None),
-                    host_name_n,
-                ),
-            )
+                cursor.execute(
+                    """
+                    UPDATE xui_hosts
+                    SET ssh_host = ?, ssh_port = ?, ssh_user = ?, ssh_password = ?, ssh_key_path = ?,
+                        ssh_deploy_script = ?, ssh_auto_deploy = ?
+                    WHERE TRIM(host_name) = TRIM(?)
+                    """,
+                    (
+                        (ssh_host or None),
+                        (int(ssh_port) if ssh_port is not None else None),
+                        (ssh_user or None),
+                        (ssh_password if ssh_password is not None else None),
+                        (ssh_key_path or None),
+                        (ssh_deploy_script or "").strip() or None,
+                        1 if bool(ssh_auto_deploy) else 0,
+                        host_name_n,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE xui_hosts
+                    SET ssh_host = ?, ssh_port = ?, ssh_user = ?, ssh_password = ?, ssh_key_path = ?
+                    WHERE TRIM(host_name) = TRIM(?)
+                    """,
+                    (
+                        (ssh_host or None),
+                        (int(ssh_port) if ssh_port is not None else None),
+                        (ssh_user or None),
+                        (ssh_password if ssh_password is not None else None),
+                        (ssh_key_path or None),
+                        host_name_n,
+                    ),
+                )
             conn.commit()
             return True
     except sqlite3.Error as e:
@@ -1375,6 +1432,27 @@ def get_all_hosts() -> list[dict]:
     except sqlite3.Error as e:
         logging.error(f"Ошибка получения списка всех хостов: {e}")
         return []
+
+
+def update_host_category(host_name: str, host_category: str | None) -> bool:
+    try:
+        host_name_n = normalize_host_name(host_name)
+        category_n = (host_category or "").strip() or None
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM xui_hosts WHERE TRIM(host_name) = TRIM(?)", (host_name_n,))
+            if cursor.fetchone() is None:
+                logging.warning(f"update_host_category: хост не найден '{host_name_n}'")
+                return False
+            cursor.execute(
+                "UPDATE xui_hosts SET host_category = ? WHERE TRIM(host_name) = TRIM(?)",
+                (category_n, host_name_n),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить категорию хоста '{host_name}': {e}")
+        return False
 
 def get_speedtests(host_name: str, limit: int = 20) -> list[dict]:
     """Получить последние результаты спидтестов по хосту (ssh/net), новые сверху."""

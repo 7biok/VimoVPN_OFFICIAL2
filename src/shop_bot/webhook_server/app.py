@@ -42,7 +42,7 @@ from shop_bot.data_manager.database import (
     get_tickets_paginated, get_open_tickets_count, get_ticket, get_ticket_messages,
     add_support_message, set_ticket_status, delete_ticket,
     get_closed_tickets_count, get_all_tickets_count, update_host_subscription_url,
-    update_host_url, update_host_hiddify_settings, update_host_name, update_host_ssh_settings, get_latest_speedtest, get_speedtests,
+    update_host_url, update_host_hiddify_settings, update_host_name, update_host_ssh_settings, update_host_category, get_latest_speedtest, get_speedtests,
     get_all_keys, get_keys_for_user, get_key_by_id, delete_key_by_id, update_key_comment, update_key_info,
     add_new_key, get_balance, adjust_user_balance, get_referrals_for_user,
     get_user, get_key_by_email, get_host, find_and_complete_pending_transaction,
@@ -1490,13 +1490,41 @@ def create_webhook_app(bot_controller_instance):
         ssh_user = (request.form.get('ssh_user') or '').strip() or None
         ssh_password = request.form.get('ssh_password')  # allow empty to clear
         ssh_key_path = (request.form.get('ssh_key_path') or '').strip() or None
+        ssh_deploy_script = (request.form.get('ssh_deploy_script') or '').strip() or None
+        ssh_auto_deploy = (request.form.get('ssh_auto_deploy') or '').strip().lower() in ('1', 'true', 'on', 'yes')
+        deploy_now = (request.form.get('deploy_now') or '').strip().lower() in ('1', 'true', 'on', 'yes')
         ssh_port = None
         try:
             ssh_port = int(ssh_port_raw) if ssh_port_raw else None
         except Exception:
             ssh_port = None
         ok = update_host_ssh_settings(host_name, ssh_host=ssh_host, ssh_port=ssh_port, ssh_user=ssh_user,
-                                      ssh_password=ssh_password, ssh_key_path=ssh_key_path)
+                                      ssh_password=ssh_password, ssh_key_path=ssh_key_path,
+                                      ssh_deploy_script=ssh_deploy_script, ssh_auto_deploy=ssh_auto_deploy)
+        if not ok:
+            flash('Не удалось обновить SSH-параметры.', 'danger')
+            return redirect(request.referrer or url_for('settings_page'))
+
+        if deploy_now and not ssh_deploy_script:
+            flash('SSH-параметры сохранены, но deploy-скрипт пустой: запуск пропущен.', 'warning')
+            return redirect(request.referrer or url_for('settings_page'))
+
+        deploy_needed = bool(ssh_deploy_script) and (ssh_auto_deploy or deploy_now)
+        if deploy_needed:
+            try:
+                deploy_result = asyncio.run(speedtest_runner.run_host_deploy_script(host_name, ssh_deploy_script))
+            except Exception as e:
+                deploy_result = {'ok': False, 'log': str(e)}
+            if deploy_result.get('ok'):
+                flash('SSH-параметры и deploy-скрипт сохранены. Деплой выполнен успешно.', 'success')
+            else:
+                log_tail = (deploy_result.get('log') or '').strip()[-350:]
+                flash(
+                    f"SSH-параметры сохранены, но деплой завершился ошибкой.{(' Лог: ' + log_tail) if log_tail else ''}",
+                    'warning'
+                )
+            return redirect(request.referrer or url_for('settings_page'))
+
         flash('SSH-параметры обновлены.' if ok else 'Не удалось обновить SSH-параметры.', 'success' if ok else 'danger')
         return redirect(request.referrer or url_for('settings_page'))
 
@@ -1978,6 +2006,18 @@ def create_webhook_app(bot_controller_instance):
         flash('Имя хоста обновлено.' if ok else 'Не удалось переименовать хост.', 'success' if ok else 'danger')
         return redirect(url_for('settings_page', tab='hosts'))
 
+    @flask_app.route('/update-host-category', methods=['POST'])
+    @login_required
+    def update_host_category_route():
+        host_name = (request.form.get('host_name') or '').strip()
+        host_category = (request.form.get('host_category') or '').strip() or None
+        if not host_name:
+            flash('Не указан хост для обновления категории.', 'warning')
+            return redirect(url_for('settings_page', tab='hosts'))
+        ok = update_host_category(host_name, host_category)
+        flash('Категория хоста обновлена.' if ok else 'Не удалось обновить категорию хоста.', 'success' if ok else 'danger')
+        return redirect(url_for('settings_page', tab='hosts'))
+
     @flask_app.route('/start-support-bot', methods=['POST'])
     @login_required
     def start_support_bot_route():
@@ -2194,6 +2234,9 @@ def create_webhook_app(bot_controller_instance):
             api_key=(request.form.get('host_api_key') or '').strip() or None,
             proxy_path=(request.form.get('host_proxy_path') or '').strip().strip('/') or None,
             client_proxy_path=(request.form.get('host_client_proxy_path') or '').strip().strip('/') or None,
+            host_category=(request.form.get('host_category') or '').strip() or None,
+            ssh_deploy_script=(request.form.get('ssh_deploy_script') or '').strip() or None,
+            ssh_auto_deploy=(request.form.get('ssh_auto_deploy') or '').strip().lower() in ('1', 'true', 'on', 'yes'),
         )
         flash(f"Хост '{request.form['host_name']}' успешно добавлен.", 'success')
         return redirect(url_for('settings_page', tab='hosts'))

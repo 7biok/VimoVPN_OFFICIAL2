@@ -102,37 +102,7 @@
           </tr>
         </thead>
         <tbody id="keys-tbody" data-fetch-url="{{ url_for('admin_keys_table_partial') }}" data-fetch-interval="10000">
-          {% for k in keys %}
-          <tr>
-            <td>#{{ k.key_id }}</td>
-            <td>{{ k.user_id }}</td>
-            <td>{{ k.host_name }}</td>
-            <td>{{ k.key_email }}</td>
-            <td class="text-truncate" style="max-width:180px">{{ k.xui_client_uuid }}</td>
-            <td>{{ k.expiry_date or '' }}</td>
-            <td>{{ k.created_date or '' }}</td>
-            <td>
-              <div class="btn-list">
-                <form action="{{ url_for('delete_key_route', key_id=k.key_id) }}" method="post" data-confirm="Удалить ключ #{{ k.key_id }}?">
-                  <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td colspan="8">
-              <form class="row g-2 align-items-center" action="{{ url_for('update_key_comment_route', key_id=k.key_id) }}" method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                <div class="col-12 col-md-10">
-                  <input class="form-control rounded-pill" type="text" name="comment" value="{{ k.comment or '' }}" placeholder="Комментарий" />
-                </div>
-                <div class="col-12 col-md-2">
-                  <button class="btn btn-outline-secondary rounded-pill w-100">Сохранить комментарий</button>
-                </div>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
+          {% include 'partials/admin_keys_table.html' %}
         </tbody>
       </table>
     </div>
@@ -683,7 +653,11 @@
       if (!btn) return;
       currentKeyId = btn.getAttribute('data-key-id');
       inputEl.value = '';
-      try { new bootstrap.Modal(modalEl).show(); } catch(_){ }
+      if (!window.bootstrap || !window.bootstrap.Modal) {
+        try { window.showToast('danger', 'Не найден Bootstrap Modal (JS не загружен)'); } catch(_) {}
+        return;
+      }
+      try { new window.bootstrap.Modal(modalEl).show(); } catch(_){ }
     });
 
     async function doSave(){
@@ -770,7 +744,11 @@
       currentKeyId = btn.getAttribute('data-key-id');
       const cur = btn.getAttribute('data-current-comment') || '';
       inputEl.value = cur;
-      try { new bootstrap.Modal(modalEl).show(); } catch(_){ }
+      if (!window.bootstrap || !window.bootstrap.Modal) {
+        try { window.showToast('danger', 'Не найден Bootstrap Modal (JS не загружен)'); } catch(_) {}
+        return;
+      }
+      try { new window.bootstrap.Modal(modalEl).show(); } catch(_){ }
     });
 
     async function saveComment(){

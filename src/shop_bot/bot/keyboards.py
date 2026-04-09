@@ -48,6 +48,24 @@ def find_host_by_callback_token(hosts: list[dict], token: str) -> dict | None:
     return None
 
 
+def _host_category_value(host: dict) -> str:
+    return (host.get('host_category') or '').strip()
+
+
+def _host_sort_key(host: dict) -> tuple[str, str]:
+    category = _host_category_value(host).casefold()
+    name = normalize_host_name(host.get('host_name') or '').casefold()
+    return (category, name)
+
+
+def _host_button_title(host: dict) -> str:
+    name = normalize_host_name(host.get('host_name') or '')
+    category = _host_category_value(host)
+    if category:
+        return f"[{category}] {name}"
+    return name
+
+
 # --- Generic builder from DB configs ---
 def _build_keyboard_from_db(
     menu_type: str,
@@ -608,9 +626,13 @@ def create_host_selection_keyboard(hosts: list, action: str) -> InlineKeyboardMa
     else:
         base_action = action
     prefix = f"select_host:{base_action}:{extra}:"
-    for host in hosts:
-        token = encode_host_callback_token(host['host_name'])
-        builder.button(text=host['host_name'], callback_data=f"{prefix}{token}")
+    hosts_sorted = sorted(hosts or [], key=_host_sort_key)
+    for host in hosts_sorted:
+        host_name = normalize_host_name(host.get('host_name') or '')
+        if not host_name:
+            continue
+        token = encode_host_callback_token(host_name)
+        builder.button(text=_host_button_title(host), callback_data=f"{prefix}{token}")
     builder.button(text=(get_setting("btn_back_to_menu") or "⬅️ Назад в меню"), callback_data="manage_keys" if action == 'new' else "back_to_main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -949,16 +971,19 @@ def create_admin_users_pick_keyboard(users: list[dict], page: int = 0, page_size
 
 def create_admin_hosts_pick_keyboard(hosts: list[dict], action: str = "gift") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    hosts_sorted = sorted(hosts or [], key=_host_sort_key)
     if hosts:
-        for h in hosts:
-            name = h.get('host_name')
-            title = name or "—"
+        for h in hosts_sorted:
+            name = normalize_host_name(h.get('host_name') or '')
+            if not name:
+                continue
+            title = _host_button_title(h) or "—"
             if action == "speedtest":
                 token = encode_host_callback_token(name or "")
                 builder.button(text=title, callback_data=f"admin_{action}_pick_host_{token}")
                 builder.button(text="🛠 Автоустановка", callback_data=f"admin_speedtest_autoinstall_{token}")
             else:
-                builder.button(text=title, callback_data=f"admin_{action}_pick_host_{title}")
+                builder.button(text=title, callback_data=f"admin_{action}_pick_host_{name}")
     else:
         builder.button(text="Хостов нет", callback_data="noop")
     # Дополнительные опции для speedtest

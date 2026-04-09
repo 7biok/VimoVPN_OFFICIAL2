@@ -465,3 +465,63 @@ async def auto_install_speedtest_on_host(host_name: str) -> dict:
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _install)
+
+
+async def run_host_deploy_script(host_name: str, script_text: str | None = None) -> dict:
+    """Run host deployment bash script via SSH.
+
+    If script_text is not provided, reads script from host.ssh_deploy_script.
+    Returns {'ok': bool, 'log': str}.
+    """
+    host = database.get_host(host_name)
+    if not host:
+        return {'ok': False, 'log': 'host not found'}
+
+    script = (script_text if script_text is not None else host.get('ssh_deploy_script')) or ''
+    script = script.strip()
+    if not script:
+        return {'ok': False, 'log': 'deploy script is empty'}
+
+    def _deploy() -> dict:
+        ssh = None
+        try:
+            ssh = _ssh_connect(host)
+        except Exception as e:
+            return {'ok': False, 'log': f'SSH connect failed: {e}'}
+
+        log_lines: list[str] = []
+        try:
+            # Execute script as stdin to bash. 'set -e' makes deploy fail fast on first error.
+            wrapped_script = f"set -e\n{script}\n"
+            stdin, stdout, stderr = ssh.exec_command("bash -s", timeout=900)
+            try:
+                stdin.write(wrapped_script)
+                stdin.flush()
+            finally:
+                try:
+                    stdin.channel.shutdown_write()
+                except Exception:
+                    pass
+
+            out = stdout.read().decode('utf-8', errors='ignore')
+            err = stderr.read().decode('utf-8', errors='ignore')
+            rc = stdout.channel.recv_exit_status() if hasattr(stdout, 'channel') else 1
+
+            log_lines.append("$ bash -s < deploy_script")
+            if out.strip():
+                log_lines.append(out.strip())
+            if err.strip():
+                log_lines.append(err.strip())
+            log_lines.append(f"exit_code={rc}")
+
+            return {'ok': rc == 0, 'log': "\n".join(log_lines)}
+        except Exception as e:
+            return {'ok': False, 'log': f'Deploy execution failed: {e}'}
+        finally:
+            try:
+                ssh.close()
+            except Exception:
+                pass
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _deploy)
