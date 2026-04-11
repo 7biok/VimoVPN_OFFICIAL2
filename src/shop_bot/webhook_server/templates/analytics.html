@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block title %}Аналитика{% endblock %}
+{% block content %}
+<div class="dashboard-shell">
+  <div class="dashboard-hero">
+    <section class="dashboard-briefing">
+      <div class="dashboard-kicker">Analytics Center</div>
+      <h1>Сводная аналитика VimoVPN</h1>
+      <p>
+        Единый экран для выручки, динамики пользователей, активности устройств, инфраструктуры и текущего состояния хостов.
+        Панели обновляются без перезагрузки, как компактный operational dashboard.
+      </p>
+    </section>
+    <aside class="dashboard-sidecard">
+      <div class="dashboard-kicker">Автообновление</div>
+      <div class="dashboard-sidecard__list">
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Интервал</strong>
+            <span>15 секунд</span>
+          </div>
+          <span>Live</span>
+        </div>
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Период</strong>
+            <span>Последние {{ analytics.days }} дней</span>
+          </div>
+          <span id="analytics-updated-at">—</span>
+        </div>
+        <div class="dashboard-sidecard__item">
+          <div>
+            <strong>Экранов</strong>
+            <span>Пользователи, деньги, инфраструктура, клиенты</span>
+          </div>
+          <span>4+</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="dashboard-alert-strip">
+    <div class="dashboard-alert-strip__title">
+      <i class="ti ti-chart-dots-3"></i>
+      <span>Главные показатели</span>
+    </div>
+    <div class="row row-deck row-cards g-3" id="analytics-summary-grid">
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Пользователи</div><div class="h2" data-summary="total_users">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Ключи</div><div class="h2" data-summary="total_keys">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Выручка</div><div class="h2" data-summary="total_income">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Устройства</div><div class="h2" data-summary="desktop_devices">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Онлайн-клиенты</div><div class="h2" data-summary="desktop_online_devices">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">VPN-подключения</div><div class="h2" data-summary="desktop_connected_devices">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Хосты</div><div class="h2" data-summary="host_count">0</div></div></div>
+      </div>
+      <div class="col-sm-6 col-xl-3">
+        <div class="card card-sm glass"><div class="card-body"><div class="text-secondary">Соединений всего</div><div class="h2" data-summary="desktop_total_connections">0</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="dashboard-grid">
+    <div class="dashboard-column">
+      <div class="card glass">
+        <div class="card-header">
+          <h3 class="card-title">Пользователи, ключи и выручка</h3>
+        </div>
+        <div class="card-body">
+          <div class="chart" style="height: 330px;">
+            <canvas id="analytics-main-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-header">
+          <h3 class="card-title">Текущие устройства</h3>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-vcenter">
+              <thead>
+                <tr>
+                  <th>Устройство</th>
+                  <th>Пользователь</th>
+                  <th>Статус</th>
+                  <th>Маршрут</th>
+                  <th>Версия</th>
+                </tr>
+              </thead>
+              <tbody id="analytics-devices-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-column">
+      <div class="card glass">
+        <div class="card-header">
+          <h3 class="card-title">Методы оплаты</h3>
+        </div>
+        <div class="card-body">
+          <div class="chart" style="height: 280px;">
+            <canvas id="analytics-payments-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-header">
+          <h3 class="card-title">Панели и ОС клиентов</h3>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="chart" style="height: 220px;">
+                <canvas id="analytics-panels-chart"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="chart" style="height: 220px;">
+                <canvas id="analytics-os-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card glass">
+        <div class="card-header">
+          <h3 class="card-title">Топ пользователей</h3>
+        </div>
+        <div class="card-body">
+          <div id="analytics-top-users" class="dashboard-hosts"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card glass mt-3">
+    <div class="card-header">
+      <h3 class="card-title">Инфраструктура и нагрузка хостов</h3>
+    </div>
+    <div class="card-body">
+      <div class="row g-3" id="analytics-hosts-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script id="analytics-data" type="application/json">{{ analytics | tojson }}</script>
+<script>
+  (function(){
+    const initialData = JSON.parse(document.getElementById('analytics-data').textContent || '{}');
+    const charts = {};
+
+    function formatRub(value){
+      return `${Number(value || 0).toFixed(0)} RUB`;
+    }
+
+    function formatPercent(value){
+      if (value === null || value === undefined || value === '') return '—';
+      return `${Number(value).toFixed(1)}%`;
+    }
+
+    function setSummary(summary){
+      document.querySelectorAll('[data-summary]').forEach((node) => {
+        const key = node.getAttribute('data-summary');
+        const value = summary && Object.prototype.hasOwnProperty.call(summary, key) ? summary[key] : 0;
+        node.textContent = key === 'total_income' ? formatRub(value) : String(value ?? 0);
+      });
+    }
+
+    function buildLineSeries(labels, rawMap){
+      return labels.map((label) => Number((rawMap || {})[label] || 0));
+    }
+
+    function buildDateLabels(daysMap, revenueMap){
+      const labels = new Set();
+      Object.keys((daysMap || {}).users || {}).forEach((key) => labels.add(key));
+      Object.keys((daysMap || {}).keys || {}).forEach((key) => labels.add(key));
+      Object.keys(revenueMap || {}).forEach((key) => labels.add(key));
+      return Array.from(labels).sort();
+    }
+
+    function upsertChart(name, canvasId, configFactory){
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      if (charts[name]) {
+        charts[name].destroy();
+      }
+      charts[name] = new Chart(canvas.getContext('2d'), configFactory());
+    }
+
+    function renderMainChart(analytics){
+      const labels = buildDateLabels((analytics.daily || {}).activity, (analytics.daily || {}).revenue);
+      const users = buildLineSeries(labels, ((analytics.daily || {}).activity || {}).users);
+      const keys = buildLineSeries(labels, ((analytics.daily || {}).activity || {}).keys);
+      const revenue = buildLineSeries(labels, (analytics.daily || {}).revenue);
+      upsertChart('main', 'analytics-main-chart', () => ({
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Новые пользователи', data: users, borderColor: '#1f8bff', backgroundColor: 'rgba(31,139,255,.12)', tension: .35, fill: true },
+            { label: 'Новые ключи', data: keys, borderColor: '#5fe3c1', backgroundColor: 'rgba(95,227,193,.12)', tension: .35, fill: true },
+            { label: 'Выручка RUB', data: revenue, borderColor: '#ffc857', backgroundColor: 'rgba(255,200,87,.12)', tension: .35, fill: true }
+          ]
+        },
+        options: {
+          maintainAspectRatio: false,
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { ticks: { color: '#94a7c6' }, grid: { color: 'rgba(148,167,198,.08)' } },
+            y: { ticks: { color: '#94a7c6' }, grid: { color: 'rgba(148,167,198,.08)' } }
+          },
+          plugins: {
+            legend: { labels: { color: '#f5f7fb' } }
+          }
+        }
+      }));
+    }
+
+    function renderPieChart(name, canvasId, items, labelKey, valueKey, colors){
+      const prepared = (items || []).filter((item) => Number(item[valueKey] || 0) > 0);
+      upsertChart(name, canvasId, () => ({
+        type: 'doughnut',
+        data: {
+          labels: prepared.map((item) => item[labelKey] || 'Unknown'),
+          datasets: [{
+            data: prepared.map((item) => Number(item[valueKey] || 0)),
+            backgroundColor: colors,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#f5f7fb' } }
+          }
+        }
+      }));
+    }
+
+    function renderPaymentsChart(items){
+      const prepared = (items || []).slice(0, 8);
+      upsertChart('payments', 'analytics-payments-chart', () => ({
+        type: 'bar',
+        data: {
+          labels: prepared.map((item) => item.payment_method || 'Unknown'),
+          datasets: [{
+            label: 'RUB',
+            data: prepared.map((item) => Number(item.total_rub || 0)),
+            backgroundColor: '#1f8bff',
+            borderRadius: 10
+          }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: '#94a7c6' }, grid: { display: false } },
+            y: { ticks: { color: '#94a7c6' }, grid: { color: 'rgba(148,167,198,.08)' } }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      }));
+    }
+
+    function renderDevicesTable(items){
+      const tbody = document.getElementById('analytics-devices-table');
+      if (!tbody) return;
+      if (!items || !items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-secondary">Данные о клиентах ещё не собраны.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map((item) => {
+        const deviceName = item.device_name || item.machine_name || item.device_id;
+        const userText = item.telegram_user_id ? `#${item.telegram_user_id}` : '—';
+        const route = item.active_host_name || item.active_endpoint || '—';
+        return `
+          <tr>
+            <td><strong>${deviceName}</strong><div class="text-secondary small">${item.os_version || 'Unknown OS'}</div></td>
+            <td>${userText}</td>
+            <td>${item.state_label || '—'}</td>
+            <td>${route}</td>
+            <td>${item.app_version || '—'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderTopUsers(items){
+      const node = document.getElementById('analytics-top-users');
+      if (!node) return;
+      if (!items || !items.length) {
+        node.innerHTML = '<div class="dashboard-hosts__item"><strong>Данных пока нет</strong><span>Появятся после покупок и продлений.</span></div>';
+        return;
+      }
+      node.innerHTML = items.map((item) => `
+        <div class="dashboard-hosts__item">
+          <strong>@${item.username || 'user_' + item.telegram_id}</strong>
+          <span>ID ${item.telegram_id} · ${Number(item.total_spent || 0).toFixed(0)} RUB · ${Number(item.total_months || 0)} мес.</span>
+        </div>
+      `).join('');
+    }
+
+    function renderHosts(items){
+      const node = document.getElementById('analytics-hosts-grid');
+      if (!node) return;
+      if (!items || !items.length) {
+        node.innerHTML = '<div class="col-12 text-secondary">Хосты ещё не добавлены.</div>';
+        return;
+      }
+      node.innerHTML = items.map((item) => `
+        <div class="col-sm-6 col-xl-4">
+          <div class="card card-sm glass">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <div class="fw-semibold">${item.host_name || 'Host'}</div>
+                  <div class="text-secondary small">${item.panel_type || 'panel'}</div>
+                </div>
+                <span class="badge bg-blue-lt">${formatPercent(item.cpu_percent)}</span>
+              </div>
+              <div class="small text-secondary mb-1">RAM ${formatPercent(item.mem_percent)} · Disk ${formatPercent(item.disk_percent)}</div>
+              <div class="small text-secondary mb-1">↓ ${item.download_mbps ? Number(item.download_mbps).toFixed(1) : '—'} Mbps · ↑ ${item.upload_mbps ? Number(item.upload_mbps).toFixed(1) : '—'} Mbps</div>
+              <div class="small text-secondary">Ping ${item.ping_ms ? Number(item.ping_ms).toFixed(0) : '—'} ms</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function setUpdatedAt(timestampMs){
+      const node = document.getElementById('analytics-updated-at');
+      if (!node) return;
+      if (!timestampMs) {
+        node.textContent = '—';
+        return;
+      }
+      node.textContent = new Intl.DateTimeFormat('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).format(new Date(timestampMs));
+    }
+
+    function renderAll(analytics){
+      if (!analytics) return;
+      setSummary(analytics.summary || {});
+      renderMainChart(analytics);
+      renderPaymentsChart(analytics.payment_methods || []);
+      renderPieChart('panels', 'analytics-panels-chart', analytics.panel_breakdown || [], 'panel_type', 'total_hosts', ['#1f8bff', '#5fe3c1', '#ff8f5f', '#c084fc', '#ffd166']);
+      renderPieChart('os', 'analytics-os-chart', analytics.os_breakdown || [], 'os_name', 'total_devices', ['#5fe3c1', '#1f8bff', '#ffd166', '#ff8f5f', '#c084fc', '#94a7c6']);
+      renderDevicesTable(((analytics.devices || {}).recent) || []);
+      renderTopUsers(analytics.top_users || []);
+      renderHosts(analytics.hosts || []);
+      setUpdatedAt(analytics.generated_at_timestamp_ms);
+    }
+
+    async function refreshAnalytics(){
+      try {
+        const response = await fetch('{{ url_for("analytics_overview_json") }}', { credentials: 'same-origin' });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) return;
+        renderAll(payload.analytics || {});
+      } catch (_) {
+      }
+    }
+
+    renderAll(initialData);
+    setInterval(refreshAnalytics, 15000);
+  })();
+</script>
+{% endblock %}

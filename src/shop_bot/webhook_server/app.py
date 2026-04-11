@@ -361,6 +361,78 @@ def create_webhook_app(bot_controller_instance):
             return None
         return f"https://t.me/{bot_username}?start=login_{code_s}"
 
+    def _desktop_update_manifest_path() -> str:
+        return os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "..",
+                "clients",
+                "windows",
+                "update-manifest.json",
+            )
+        )
+
+    def _find_latest_desktop_client_package() -> str | None:
+        dist_root = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "..",
+                "dist",
+                "windows",
+            )
+        )
+        if not os.path.isdir(dist_root):
+            return None
+        candidates: list[str] = []
+        for entry in os.listdir(dist_root):
+            if not entry.lower().endswith(".zip"):
+                continue
+            if not entry.startswith("VimoVPN.Client-win-x64-"):
+                continue
+            candidates.append(os.path.join(dist_root, entry))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda path: (os.path.getmtime(path), path), reverse=True)
+        return candidates[0]
+
+    def _read_desktop_update_manifest() -> dict:
+        manifest = {
+            "latest_version": None,
+            "channel": "stable",
+            "download_url": None,
+            "release_notes": "",
+            "published_at": None,
+            "required": False,
+        }
+        manifest_path = _desktop_update_manifest_path()
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle) or {}
+                if isinstance(data, dict):
+                    manifest.update(data)
+            except Exception as exc:
+                logger.warning("Failed to read desktop update manifest: %s", exc)
+        download_url = str(manifest.get("download_url") or "").strip()
+        if not download_url and _find_latest_desktop_client_package():
+            download_url = url_for("desktop_client_download_latest")
+        if download_url.startswith("/"):
+            manifest["download_url"] = f"{_public_base_url()}{download_url}"
+        else:
+            manifest["download_url"] = download_url or None
+        return manifest
+
+    def _request_public_ip() -> str | None:
+        forwarded_for = str(request.headers.get("X-Forwarded-For") or "").strip()
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip() or None
+        remote_addr = str(request.headers.get("X-Real-IP") or request.remote_addr or "").strip()
+        return remote_addr or None
+
     def _extract_ping_target(server_url: str | None, connection_string: str | None) -> str | None:
         for raw in (connection_string, server_url):
             text = str(raw or "").strip()
@@ -461,6 +533,8 @@ def create_webhook_app(bot_controller_instance):
             balance = float(get_balance(user_id))
         except Exception:
             balance = 0.0
+        device_summary = database.get_desktop_device_summary(user_id)
+        devices = database.get_user_desktop_devices(user_id)
 
         return {
             "user": {
@@ -469,8 +543,13 @@ def create_webhook_app(bot_controller_instance):
                 "username": str(user.get("username") or "").strip() or None,
                 "balance_rub": balance,
                 "keys_count": len(serialized_keys),
+                "device_count": int(device_summary.get("total_devices") or 0),
+                "online_device_count": int(device_summary.get("online_devices") or 0),
+                "connected_device_count": int(device_summary.get("connected_devices") or 0),
             },
             "keys": serialized_keys,
+            "devices": devices,
+            "device_summary": device_summary,
             "generated_at_timestamp_ms": int(time.time() * 1000),
         }
 
@@ -1016,6 +1095,22 @@ def create_webhook_app(bot_controller_instance):
                 "details": str(exc),
             }), 500
 
+    @flask_app.route('/desktop-app/update-manifest')
+    def desktop_update_manifest():
+        manifest = _read_desktop_update_manifest()
+        return jsonify({
+            "ok": True,
+            **manifest,
+            "generated_at_timestamp_ms": int(time.time() * 1000),
+        })
+
+    @flask_app.route('/desktop-app/client/download/latest')
+    def desktop_client_download_latest():
+        latest_package = _find_latest_desktop_client_package()
+        if not latest_package or not os.path.isfile(latest_package):
+            return jsonify({"ok": False, "error": "package_not_found"}), 404
+        return send_file(latest_package, as_attachment=True, download_name=os.path.basename(latest_package))
+
     @flask_app.route('/desktop-app/auth/status/<session_id>')
     def desktop_auth_status(session_id: str):
         session_data = get_desktop_auth_session_by_session_id(session_id)
@@ -1075,6 +1170,87 @@ def create_webhook_app(bot_controller_instance):
             ),
         }
         return jsonify({"ok": True, **payload})
+
+    @flask_app.route('/desktop-app/heartbeat', methods=['POST'])
+    @csrf.exempt
+    def desktop_heartbeat():
+        session_data, user, error_response = _get_desktop_authenticated_context()
+        if error_response:
+            return error_response
+        payload = request.get_json(silent=True) or {}
+        try:
+            device = database.upsert_desktop_client_device(
+                telegram_user_id=int(user["telegram_id"]),
+                device_id=str(payload.get("device_id") or "").strip(),
+                client_name=str(payload.get("client_name") or session_data.get("client_name") or "").strip() or None,
+                device_name=str(payload.get("device_name") or "").strip() or None,
+                machine_name=str(payload.get("machine_name") or "").strip() or None,
+                os_version=str(payload.get("os_version") or "").strip() or None,
+                app_version=str(payload.get("app_version") or "").strip() or None,
+                is_online=bool(payload.get("is_online", True)),
+                vpn_connected=bool(payload.get("vpn_connected", False)),
+                active_key_id=(int(payload.get("active_key_id")) if payload.get("active_key_id") not in (None, "", 0, "0") else None),
+                active_host_name=str(payload.get("active_host_name") or "").strip() or None,
+                active_endpoint=str(payload.get("active_endpoint") or "").strip() or None,
+                public_ip=_request_public_ip(),
+            )
+        except Exception as exc:
+            logger.error("Desktop heartbeat failed for user %s: %s", user.get("telegram_id"), exc, exc_info=True)
+            return jsonify({"ok": False, "error": "heartbeat_failed", "details": str(exc)}), 500
+        if not device:
+            return jsonify({"ok": False, "error": "device_save_failed"}), 500
+        return jsonify({
+            "ok": True,
+            "device": device,
+            "server_time_timestamp_ms": int(time.time() * 1000),
+        })
+
+    def _build_analytics_snapshot(days: int = 30) -> dict:
+        days_int = max(1, int(days or 30))
+        hosts = get_all_hosts() or []
+        summary = get_admin_stats() or {}
+        device_summary = database.get_desktop_device_summary()
+        summary.update({
+            "host_count": len(hosts),
+            "desktop_devices": int(device_summary.get("total_devices") or 0),
+            "desktop_online_devices": int(device_summary.get("online_devices") or 0),
+            "desktop_connected_devices": int(device_summary.get("connected_devices") or 0),
+            "desktop_total_connections": int(device_summary.get("total_connections") or 0),
+        })
+        host_cards = []
+        for host in hosts[:12]:
+            host_name = host.get("host_name")
+            latest_metrics = database.get_latest_host_metrics(host_name) or {}
+            latest_speedtest = get_latest_speedtest(host_name) or {}
+            host_cards.append({
+                "host_name": host_name,
+                "panel_type": str(host.get("panel_type") or "hiddify").strip().lower() or "hiddify",
+                "cpu_percent": latest_metrics.get("cpu_percent"),
+                "mem_percent": latest_metrics.get("mem_percent"),
+                "disk_percent": latest_metrics.get("disk_percent"),
+                "download_mbps": latest_speedtest.get("download_mbps"),
+                "upload_mbps": latest_speedtest.get("upload_mbps"),
+                "ping_ms": latest_speedtest.get("ping_ms"),
+                "updated_at": latest_metrics.get("created_at") or latest_speedtest.get("created_at"),
+            })
+        return {
+            "summary": summary,
+            "days": days_int,
+            "generated_at_timestamp_ms": int(time.time() * 1000),
+            "daily": {
+                "activity": get_daily_stats_for_charts(days=days_int),
+                "revenue": database.get_daily_revenue_series(days=days_int),
+            },
+            "payment_methods": database.get_payment_method_breakdown(days=days_int),
+            "panel_breakdown": database.get_host_panel_breakdown(),
+            "os_breakdown": database.get_desktop_os_breakdown(),
+            "top_users": database.get_top_users_by_spend(limit=6),
+            "devices": {
+                "summary": device_summary,
+                "recent": database.get_recent_desktop_devices(limit=12),
+            },
+            "hosts": host_cards,
+        }
 
     @flask_app.route('/dashboard')
     @login_required
@@ -1151,6 +1327,25 @@ def create_webhook_app(bot_controller_instance):
     def dashboard_charts_json():
         data = get_daily_stats_for_charts(days=30)
         return jsonify(data)
+
+    @flask_app.route('/analytics')
+    @login_required
+    def analytics_page():
+        common_data = get_common_template_data()
+        analytics = _build_analytics_snapshot(days=request.args.get('days', 30, type=int))
+        common_data.update({
+            "analytics": analytics,
+        })
+        return render_template('analytics.html', **common_data)
+
+    @flask_app.route('/analytics/overview.json')
+    @login_required
+    def analytics_overview_json():
+        return jsonify({
+            "ok": True,
+            "analytics": _build_analytics_snapshot(days=request.args.get('days', 30, type=int)),
+        })
+
     # --- Resource Monitor ---
     @flask_app.route('/monitor')
     @login_required
@@ -1252,9 +1447,18 @@ def create_webhook_app(bot_controller_instance):
             try:
                 user['balance'] = get_balance(uid)
                 user['referrals'] = get_referrals_for_user(uid)
+                user['desktop_devices'] = database.get_user_desktop_devices(uid)
+                user['desktop_device_summary'] = database.get_desktop_device_summary(uid)
             except Exception:
                 user['balance'] = 0.0
                 user['referrals'] = []
+                user['desktop_devices'] = []
+                user['desktop_device_summary'] = {
+                    "total_devices": 0,
+                    "online_devices": 0,
+                    "connected_devices": 0,
+                    "total_connections": 0,
+                }
 
         total_pages = max(1, ceil(total / per_page)) if total else 1
         common_data = get_common_template_data()
@@ -1284,9 +1488,18 @@ def create_webhook_app(bot_controller_instance):
             try:
                 user['balance'] = get_balance(uid)
                 user['referrals'] = get_referrals_for_user(uid)
+                user['desktop_devices'] = database.get_user_desktop_devices(uid)
+                user['desktop_device_summary'] = database.get_desktop_device_summary(uid)
             except Exception:
                 user['balance'] = 0.0
                 user['referrals'] = []
+                user['desktop_devices'] = []
+                user['desktop_device_summary'] = {
+                    "total_devices": 0,
+                    "online_devices": 0,
+                    "connected_devices": 0,
+                    "total_connections": 0,
+                }
         return render_template('partials/users_table.html', users=users)
 
     @flask_app.route('/users/<int:user_id>/balance/adjust', methods=['POST'])

@@ -47,6 +47,22 @@ public sealed class DesktopApiClient : IDisposable
         return await DeserializeAsync<DesktopProfileResponse>(response, cancellationToken);
     }
 
+    public async Task<DesktopHeartbeatResponse> SendHeartbeatAsync(string accessToken, DesktopHeartbeatRequest payload, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(payload, _jsonOptions);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "desktop-app/heartbeat");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        return await DeserializeAsync<DesktopHeartbeatResponse>(response, cancellationToken);
+    }
+
+    public async Task<DesktopUpdateManifestResponse> GetUpdateManifestAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync("desktop-app/update-manifest", cancellationToken);
+        return await DeserializeAsync<DesktopUpdateManifestResponse>(response, cancellationToken);
+    }
+
     private async Task<T> DeserializeAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken) where T : new()
     {
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);

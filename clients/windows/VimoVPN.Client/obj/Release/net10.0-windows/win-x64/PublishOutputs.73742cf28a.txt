@@ -1,0 +1,7 @@
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\VimoVPN.Client.exe
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\appsettings.json
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\runtime\README.txt
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\VimoVPN.Client.dll
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\VimoVPN.Client.deps.json
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\VimoVPN.Client.runtimeconfig.json
+C:\Users\7biok\Desktop\VimoVPN_PROD\VimoVPN_OFFICIAL2\dist\windows\VimoVPN.Client-win-x64-20260411-144103\VimoVPN.Client.pdb

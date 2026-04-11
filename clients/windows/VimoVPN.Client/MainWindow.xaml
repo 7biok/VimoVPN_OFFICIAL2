@@ -5,9 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="VimoVPN"
-        Width="1220"
-        Height="860"
-        MinWidth="1040"
+        Width="1380"
+        Height="900"
+        MinWidth="1160"
         MinHeight="760"
         WindowStartupLocation="CenterScreen"
         Background="#07101B"
@@ -15,72 +15,42 @@
         Closing="Window_Closing">
     <Window.Resources>
         <SolidColorBrush x:Key="PageBrush" Color="#07101B" />
+        <SolidColorBrush x:Key="SidebarBrush" Color="#0A1321" />
         <SolidColorBrush x:Key="PanelBrush" Color="#0B1422" />
-        <SolidColorBrush x:Key="CardBrush" Color="#111C2D" />
-        <SolidColorBrush x:Key="CardSoftBrush" Color="#0F1726" />
-        <SolidColorBrush x:Key="StrokeBrush" Color="#1E314B" />
+        <SolidColorBrush x:Key="CardBrush" Color="#101C2C" />
+        <SolidColorBrush x:Key="StrokeBrush" Color="#1A2D46" />
         <SolidColorBrush x:Key="PrimaryBrush" Color="#1982FF" />
-        <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#3390FF" />
-        <SolidColorBrush x:Key="GhostBrush" Color="#162334" />
         <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F5F7FB" />
-        <SolidColorBrush x:Key="TextMutedBrush" Color="#89A0C0" />
-        <SolidColorBrush x:Key="TextSoftBrush" Color="#B9C7DA" />
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#8EA6C8" />
+        <SolidColorBrush x:Key="TextSoftBrush" Color="#BDCCE0" />
 
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="FontSize" Value="15" />
+        <Style x:Key="SidebarButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Padding" Value="22,14" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="Margin" Value="0,0,0,10" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="18"
-                                SnapsToDevicePixels="True">
+                        <Border Background="#132134" BorderBrush="#20344E" BorderThickness="1" CornerRadius="16">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{StaticResource PrimaryHoverBrush}" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Opacity" Value="0.9" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Root" Property="Opacity" Value="0.55" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <Style x:Key="GhostButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
-            <Setter Property="Background" Value="{StaticResource GhostBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Style x:Key="PrimarySidebarButtonStyle" TargetType="Button" BasedOn="{StaticResource SidebarButtonStyle}">
+            <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="#24405F"
-                                BorderThickness="1"
-                                CornerRadius="18"
-                                SnapsToDevicePixels="True">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="16">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1A2A3F" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Opacity" Value="0.92" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -90,282 +60,183 @@
             <Setter Property="Background" Value="{StaticResource CardBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource StrokeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="26" />
-            <Setter Property="Padding" Value="24" />
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect BlurRadius="28" ShadowDepth="0" Color="#4A8BFF" Opacity="0.10" />
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="SectionCaptionStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+            <Setter Property="CornerRadius" Value="22" />
+            <Setter Property="Padding" Value="22" />
         </Style>
     </Window.Resources>
 
     <Grid Background="{StaticResource PageBrush}">
-        <Canvas IsHitTestVisible="False">
-            <Ellipse Width="420" Height="420" Fill="#123B76" Opacity="0.32" Canvas.Left="-120" Canvas.Top="-140">
-                <Ellipse.Effect>
-                    <BlurEffect Radius="80" />
-                </Ellipse.Effect>
-            </Ellipse>
-            <Ellipse Width="340" Height="340" Fill="#0B5BCA" Opacity="0.18" Canvas.Right="-60" Canvas.Bottom="-80">
-                <Ellipse.Effect>
-                    <BlurEffect Radius="72" />
-                </Ellipse.Effect>
-            </Ellipse>
-        </Canvas>
+        <Border Margin="18" Background="{StaticResource PanelBrush}" BorderBrush="#162638" BorderThickness="1" CornerRadius="30">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="300" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-        <Border Margin="22"
-                Background="{StaticResource PanelBrush}"
-                BorderBrush="#18273B"
-                BorderThickness="1"
-                CornerRadius="30">
-            <Grid Margin="32">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+                <Border Grid.Column="0" Margin="16" Background="{StaticResource SidebarBrush}" BorderBrush="#162638" BorderThickness="1" CornerRadius="24">
+                    <Grid Margin="20">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-                <Grid Margin="0,0,0,28">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel>
-                        <TextBlock Text="VimoVPN"
-                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                   FontFamily="Segoe UI Semibold"
-                                   FontSize="34" />
-                        <TextBlock Text="{Binding TelegramHandleText}"
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   FontSize="14"
-                                   Margin="0,6,0,0" />
-                    </StackPanel>
-
-                    <Border Grid.Column="1"
-                            Padding="16,10"
-                            Background="#122033"
-                            BorderBrush="#27435F"
-                            BorderThickness="1"
-                            CornerRadius="16"
-                            VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ConnectionStatusText}"
-                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                   FontSize="13"
-                                   FontWeight="SemiBold" />
-                    </Border>
-                </Grid>
-
-                <Grid Grid.Row="1">
-                    <Grid.Style>
-                        <Style TargetType="Grid">
-                            <Setter Property="Visibility" Value="Visible" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsAuthenticated}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Grid.Style>
-
-                    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="720">
-                        <Border Style="{StaticResource CardStyle}" Padding="44">
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,18">
                             <StackPanel>
-                                <TextBlock Text="Быстрый вход"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="18"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="{Binding LoginCodeDisplay}"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="62"
-                                           Margin="0,20,0,10"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="{Binding AuthStatusText}"
-                                           Foreground="{StaticResource TextSoftBrush}"
-                                           FontSize="15"
-                                           TextAlignment="Center"
-                                           TextWrapping="Wrap"
-                                           Margin="0,0,0,26" />
-                                <Button Content="Войти через Telegram"
-                                        Click="RequestCode_Click"
-                                        Style="{StaticResource PrimaryButtonStyle}"
-                                        Width="260"
-                                        HorizontalAlignment="Center" />
+                                <TextBlock Text="VimoVPN" FontSize="30" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock Text="Control Center" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding ConnectionStatusText}" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,16,0,0" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Grid.Row="1">
+                            <Button Content="Войти через Telegram" Click="RequestCode_Click" Style="{StaticResource PrimarySidebarButtonStyle}" />
+                            <Button Content="Обновить профиль" Click="RefreshProfile_Click" Style="{StaticResource SidebarButtonStyle}" />
+                            <Button Content="Подключить лучший сервер" Click="ConnectBest_Click" Style="{StaticResource SidebarButtonStyle}" />
+                            <Button Content="Проверить обновление" Click="CheckUpdates_Click" Style="{StaticResource SidebarButtonStyle}" />
+                            <Button Content="Скачать обновление" Click="OpenUpdateDownload_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SidebarButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasUpdateAvailable}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="Отключить VPN" Click="Disconnect_Click" Style="{StaticResource SidebarButtonStyle}" />
+                            <Button Content="Выйти из аккаунта" Click="ResetLogin_Click" Style="{StaticResource SidebarButtonStyle}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" Margin="0,18,0,18">
+                            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,12"><StackPanel><TextBlock Text="Версия" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding CurrentVersionText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,8,0,0" /></StackPanel></Border>
+                            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,12"><StackPanel><TextBlock Text="Устройства" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding DeviceSummaryText}" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0" TextWrapping="Wrap" /></StackPanel></Border>
+                            <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="Обновления" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding UpdateStatusText}" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,8,0,4" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding UpdateReleaseNotesText}" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" /></StackPanel></Border>
+                        </StackPanel>
+
+                        <Border Grid.Row="3" Padding="16" Background="#132134" BorderBrush="#20344E" BorderThickness="1" CornerRadius="18">
+                            <StackPanel>
+                                <TextBlock Text="{Binding TelegramHandleText}" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ApiBaseUrl}" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                     </Grid>
-                </Grid>
+                </Border>
 
-                <Grid Grid.Row="1">
-                    <Grid.Style>
-                        <Style TargetType="Grid">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsAuthenticated}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Grid.Style>
-
+                <Grid Grid.Column="1" Margin="0,16,16,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Grid Margin="0,0,0,18">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.05*" />
-                            <ColumnDefinition Width="1.05*" />
-                            <ColumnDefinition Width="1.2*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Style="{StaticResource CardStyle}" Margin="0,0,18,0">
+                    <Border Grid.Row="0" Margin="0,0,0,16" Padding="24,18" Background="#0C1727" BorderBrush="#162638" BorderThickness="1" CornerRadius="24">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="Профиль" Style="{StaticResource SectionCaptionStyle}" />
-                                <TextBlock Text="{Binding UserDisplayName}"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="28"
-                                           Margin="0,12,0,8" />
-                                <TextBlock Text="{Binding ProfileMetaText}"
-                                           Foreground="{StaticResource TextSoftBrush}"
-                                           FontSize="14"
-                                           TextWrapping="Wrap" />
+                                <TextBlock Text="Windows client" Foreground="{StaticResource TextMutedBrush}" />
+                                <TextBlock Text="{Binding UserDisplayName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="30" FontWeight="Bold" Margin="0,6,0,0" />
+                                <TextBlock Text="{Binding ProfileMetaText}" Foreground="{StaticResource TextSoftBrush}" FontSize="14" Margin="0,6,0,0" TextWrapping="Wrap" />
                             </StackPanel>
-                        </Border>
-
-                        <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="0,0,18,0">
-                            <StackPanel>
-                                <TextBlock Text="Трафик" Style="{StaticResource SectionCaptionStyle}" />
-                                <TextBlock Text="{Binding TrafficSummaryText}"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="24"
-                                           Margin="0,12,0,0"
-                                           TextWrapping="Wrap" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding SelectedServerName}" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" TextAlignment="Right" />
+                                <TextBlock Text="{Binding SelectedServerDetails}" Foreground="{StaticResource TextMutedBrush}" FontSize="13" Margin="0,8,0,0" TextAlignment="Right" TextWrapping="Wrap" MaxWidth="320" />
                             </StackPanel>
-                        </Border>
-
-                        <Border Grid.Column="2" Style="{StaticResource CardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="Маршрут" Style="{StaticResource SectionCaptionStyle}" />
-                                <TextBlock Text="{Binding SelectedServerName}"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
-                                           FontFamily="Segoe UI Semibold"
-                                           FontSize="24"
-                                           Margin="0,12,0,8"
-                                           TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding SelectedServerDetails}"
-                                           Foreground="{StaticResource TextSoftBrush}"
-                                           FontSize="14"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-
-                    <WrapPanel Grid.Row="1" Margin="0,0,0,18">
-                        <Button Content="Обновить"
-                                Click="RefreshProfile_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Margin="0,0,12,0" />
-                        <Button Content="Подключить лучший"
-                                Click="ConnectBest_Click"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Margin="0,0,12,0" />
-                        <Button Content="Отключить"
-                                Click="Disconnect_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Margin="0,0,12,0" />
-                        <Button Content="Выйти"
-                                Click="ResetLogin_Click"
-                                Style="{StaticResource GhostButtonStyle}" />
-                    </WrapPanel>
-
-                    <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="24,22">
-                        <DockPanel>
-                            <TextBlock Text="Хосты"
-                                       DockPanel.Dock="Top"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                       FontFamily="Segoe UI Semibold"
-                                       FontSize="20"
-                                       Margin="0,0,0,18" />
-
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding ServerCards}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Width="318"
-                                                    Margin="0,0,18,18"
-                                                    Padding="18"
-                                                    Background="{StaticResource CardSoftBrush}"
-                                                    BorderBrush="#21344B"
-                                                    BorderThickness="1"
-                                                    CornerRadius="22">
-                                                <Grid>
-                                                    <Grid.RowDefinitions>
-                                                        <RowDefinition Height="Auto" />
-                                                        <RowDefinition Height="*" />
-                                                        <RowDefinition Height="Auto" />
-                                                    </Grid.RowDefinitions>
-
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding Title}"
-                                                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                                                   FontFamily="Segoe UI Semibold"
-                                                                   FontSize="20"
-                                                                   TextWrapping="Wrap" />
-                                                        <TextBlock Text="{Binding StatusText}"
-                                                                   Foreground="#7DB8FF"
-                                                                   FontSize="13"
-                                                                   Margin="0,10,0,0"
-                                                                   TextWrapping="Wrap" />
-                                                        <TextBlock Text="{Binding TrafficText}"
-                                                                   Foreground="{StaticResource TextSoftBrush}"
-                                                                   FontSize="13"
-                                                                   Margin="0,10,0,0"
-                                                                   TextWrapping="Wrap" />
-                                                        <TextBlock Text="{Binding PingText}"
-                                                                   Foreground="{StaticResource TextMutedBrush}"
-                                                                   FontSize="13"
-                                                                   Margin="0,8,0,0"
-                                                                   TextWrapping="Wrap" />
-                                                        <TextBlock Text="{Binding Key.ExpiresAt}"
-                                                                   Foreground="{StaticResource TextMutedBrush}"
-                                                                   FontSize="12"
-                                                                   Margin="0,8,0,0"
-                                                                   TextWrapping="Wrap" />
-                                                    </StackPanel>
-
-                                                    <Button Grid.Row="2"
-                                                            Content="Подключить"
-                                                            Tag="{Binding Key}"
-                                                            Click="ConnectSpecific_Click"
-                                                            Style="{StaticResource PrimaryButtonStyle}"
-                                                            Margin="0,18,0,0" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </DockPanel>
+                        </Grid>
                     </Border>
+
+                    <Border Grid.Row="1" Margin="0,0,0,16" Padding="20,16" Background="#10233B" BorderBrush="#1B395C" BorderThickness="1" CornerRadius="22">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasUpdateAvailable}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="Доступно новое обновление" Foreground="{StaticResource TextPrimaryBrush}" FontSize="18" FontWeight="Bold" /><TextBlock Text="{Binding UpdateReleaseNotesText}" Foreground="{StaticResource TextSoftBrush}" Margin="0,6,0,0" TextWrapping="Wrap" /></StackPanel>
+                            <Button Grid.Column="1" Content="Скачать" Click="OpenUpdateDownload_Click" Style="{StaticResource PrimarySidebarButtonStyle}" Width="170" Margin="18,0,0,0" />
+                        </Grid>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <Grid>
+                            <Grid>
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsAuthenticated}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid MaxWidth="920" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Border Style="{StaticResource CardStyle}" Padding="40" Margin="0,0,0,18">
+                                        <StackPanel>
+                                            <TextBlock Text="Быстрый вход" Foreground="{StaticResource TextMutedBrush}" FontSize="14" HorizontalAlignment="Center" />
+                                            <TextBlock Text="{Binding LoginCodeDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="72" FontWeight="Bold" Margin="0,16,0,10" HorizontalAlignment="Center" />
+                                            <TextBlock Text="{Binding AuthStatusText}" Foreground="{StaticResource TextSoftBrush}" FontSize="15" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,24" />
+                                            <Button Content="Открыть Telegram и подтвердить вход" Click="RequestCode_Click" Style="{StaticResource PrimarySidebarButtonStyle}" Width="320" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Grid>
+
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsAuthenticated}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,12,0"><StackPanel><TextBlock Text="Профиль" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding UserDisplayName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,8,0,4" /><TextBlock Text="{Binding ProfileMetaText}" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" /></StackPanel></Border>
+                                    <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="4,0,8,0"><StackPanel><TextBlock Text="Трафик" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding TrafficSummaryText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="22" FontWeight="Bold" Margin="0,8,0,4" TextWrapping="Wrap" /></StackPanel></Border>
+                                    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,4,0"><StackPanel><TextBlock Text="Устройства" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding DeviceSummaryText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,4" TextWrapping="Wrap" /></StackPanel></Border>
+                                    <Border Grid.Column="3" Style="{StaticResource CardStyle}" Margin="12,0,0,0"><StackPanel><TextBlock Text="Маршрут" Foreground="{StaticResource TextMutedBrush}" /><TextBlock Text="{Binding SelectedServerName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="20" FontWeight="Bold" Margin="0,8,0,4" TextWrapping="Wrap" /><TextBlock Text="{Binding SelectedServerDetails}" Foreground="{StaticResource TextSoftBrush}" TextWrapping="Wrap" /></StackPanel></Border>
+                                </Grid>
+
+                                <Border Style="{StaticResource CardStyle}">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+                                            <TextBlock Text="Доступные серверы" Foreground="{StaticResource TextPrimaryBrush}" FontSize="22" FontWeight="Bold" />
+                                            <TextBlock Text="Клиент выбирает лучший endpoint по ping и поднимает туннель через sing-box." Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl ItemsSource="{Binding ServerCards}">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Width="320" Margin="0,0,16,16" Padding="18" Background="#0D1725" BorderBrush="#20344E" BorderThickness="1" CornerRadius="20">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="20" FontWeight="Bold" TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding StatusText}" Foreground="#78B6FF" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding TrafficText}" Foreground="{StaticResource TextSoftBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding PingText}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                                                    <TextBlock Text="{Binding Key.ExpiresAt}" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                                                </StackPanel>
+                                                                <Button Grid.Row="2" Content="Подключить этот сервер" Tag="{Binding Key}" Click="ConnectSpecific_Click" Style="{StaticResource PrimarySidebarButtonStyle}" Margin="0,18,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
         </Border>

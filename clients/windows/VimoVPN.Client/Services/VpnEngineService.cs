@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Principal;
 using System.Text;
 using VimoVPN.Client.Models;
 
@@ -9,9 +10,9 @@ public sealed class VpnEngineService : IAsyncDisposable
 {
     private Process? _process;
     private readonly StringBuilder _logBuffer = new();
-    private string? _activeConfigPath;
 
     public bool IsRunning => _process is { HasExited: false };
+    public string? LastConfigPath { get; private set; }
 
     public async Task<(bool Success, string Message)> ConnectAsync(
         SubscriptionEndpoint endpoint,
@@ -20,9 +21,10 @@ public sealed class VpnEngineService : IAsyncDisposable
     {
         await DisconnectAsync();
 
-        if (!File.Exists(singboxPath))
+        var precheckError = ValidateRuntimePrerequisites(singboxPath);
+        if (!string.IsNullOrWhiteSpace(precheckError))
         {
-            return (false, $"sing-box.exe not found: {singboxPath}");
+            return (false, precheckError);
         }
 
         var workingDirectory = Path.GetDirectoryName(singboxPath) ?? AppContext.BaseDirectory;
@@ -33,14 +35,20 @@ public sealed class VpnEngineService : IAsyncDisposable
             "runtime");
         Directory.CreateDirectory(stateDirectory);
 
-        _activeConfigPath = Path.Combine(stateDirectory, "singbox-config.json");
-        File.WriteAllText(_activeConfigPath, SingboxConfigBuilder.BuildConfig(endpoint));
+        LastConfigPath = Path.Combine(stateDirectory, "singbox-config.json");
+        File.WriteAllText(LastConfigPath, SingboxConfigBuilder.BuildConfig(endpoint));
+
+        var configCheck = await CheckConfigAsync(singboxPath, LastConfigPath, cancellationToken);
+        if (!configCheck.Success)
+        {
+            return (false, configCheck.Message);
+        }
 
         _logBuffer.Clear();
         var startInfo = new ProcessStartInfo
         {
             FileName = singboxPath,
-            Arguments = $"run -c \"{_activeConfigPath}\"",
+            Arguments = $"run -c \"{LastConfigPath}\"",
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -56,21 +64,24 @@ public sealed class VpnEngineService : IAsyncDisposable
         {
             _process.Dispose();
             _process = null;
-            return (false, "Failed to start sing-box process.");
+            return (false, "Не удалось запустить процесс sing-box.");
         }
 
         _process.BeginOutputReadLine();
         _process.BeginErrorReadLine();
 
-        await Task.Delay(TimeSpan.FromSeconds(4), cancellationToken);
-        if (_process.HasExited)
+        for (var attempt = 0; attempt < 12; attempt += 1)
         {
-            var message = BuildFailureMessage();
-            await DisconnectAsync();
-            return (false, message);
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            if (_process.HasExited)
+            {
+                var message = BuildFailureMessage();
+                await DisconnectAsync();
+                return (false, message);
+            }
         }
 
-        return (true, $"Connected via {endpoint.DisplayName}");
+        return (true, $"Туннель поднят через {endpoint.DisplayName}");
     }
 
     public async Task DisconnectAsync()
@@ -102,7 +113,88 @@ public sealed class VpnEngineService : IAsyncDisposable
 
     public string GetLastLogSnippet()
     {
-        return _logBuffer.ToString().Trim();
+        lock (_logBuffer)
+        {
+            return _logBuffer.ToString().Trim();
+        }
+    }
+
+    private static string? ValidateRuntimePrerequisites(string singboxPath)
+    {
+        if (!File.Exists(singboxPath))
+        {
+            return $"Не найден runtime: {singboxPath}";
+        }
+
+        var workingDirectory = Path.GetDirectoryName(singboxPath) ?? AppContext.BaseDirectory;
+        var wintunPath = Path.Combine(workingDirectory, "wintun.dll");
+        if (!File.Exists(wintunPath))
+        {
+            return $"Не найден wintun.dll рядом с sing-box: {wintunPath}";
+        }
+
+        if (OperatingSystem.IsWindows() && !IsProcessElevated())
+        {
+            return "Клиент нужно запускать от имени администратора для TUN-режима.";
+        }
+
+        return null;
+    }
+
+    private static bool IsProcessElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<(bool Success, string Message)> CheckConfigAsync(
+        string singboxPath,
+        string configPath,
+        CancellationToken cancellationToken)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = singboxPath,
+                Arguments = $"check -c \"{configPath}\"",
+                WorkingDirectory = Path.GetDirectoryName(singboxPath) ?? AppContext.BaseDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            }
+        };
+
+        if (!process.Start())
+        {
+            return (false, "sing-box check не удалось запустить.");
+        }
+
+        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken);
+
+        var combined = $"{await outputTask}{Environment.NewLine}{await errorTask}".Trim();
+        if (process.ExitCode == 0)
+        {
+            return (true, combined);
+        }
+
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            combined = $"sing-box check завершился с кодом {process.ExitCode}.";
+        }
+
+        return (false, $"Конфиг sing-box не прошёл проверку.{Environment.NewLine}{combined}{Environment.NewLine}Конфиг: {configPath}");
     }
 
     private void OnProcessOutput(object sender, DataReceivedEventArgs e)
@@ -115,9 +207,9 @@ public sealed class VpnEngineService : IAsyncDisposable
         lock (_logBuffer)
         {
             _logBuffer.AppendLine(e.Data.Trim());
-            if (_logBuffer.Length > 4000)
+            if (_logBuffer.Length > 6000)
             {
-                _logBuffer.Remove(0, _logBuffer.Length - 4000);
+                _logBuffer.Remove(0, _logBuffer.Length - 6000);
             }
         }
     }
@@ -127,13 +219,13 @@ public sealed class VpnEngineService : IAsyncDisposable
         var logs = GetLastLogSnippet();
         if (string.IsNullOrWhiteSpace(logs))
         {
-            return "sing-box exited before tunnel became ready.";
+            return $"sing-box завершился сразу после запуска. Проверьте конфиг: {LastConfigPath}";
         }
 
         var lines = logs
             .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .TakeLast(6);
-        return string.Join(Environment.NewLine, lines);
+            .TakeLast(8);
+        return $"{string.Join(Environment.NewLine, lines)}{Environment.NewLine}Конфиг: {LastConfigPath}";
     }
 
     public async ValueTask DisposeAsync()

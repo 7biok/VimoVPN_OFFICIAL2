@@ -149,6 +149,9 @@ public sealed class SubscriptionLinkResolver : IDisposable
             PublicKey = GetQueryValue(query, "pbk"),
             ShortId = GetQueryValue(query, "sid"),
             Fingerprint = GetQueryValue(query, "fp"),
+            AllowInsecureTls = ParseBoolean(GetQueryValue(query, "allowInsecure"))
+                || ParseBoolean(GetQueryValue(query, "insecure"))
+                || ParseBoolean(GetQueryValue(query, "skip-cert-verify")),
             Network = network,
         };
     }
@@ -333,6 +336,14 @@ public sealed class SubscriptionLinkResolver : IDisposable
         {
             return null;
         }
+    }
+
+    private static bool ParseBoolean(string? value)
+    {
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()

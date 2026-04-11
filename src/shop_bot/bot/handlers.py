@@ -60,6 +60,7 @@ from shop_bot.data_manager.database import (
     redeem_promo_code,
     update_promo_code_status,
     get_admin_ids,
+    get_desktop_device_summary,
 )
 from shop_bot.config import (
     CHOOSE_PLAN_MESSAGE,
@@ -603,6 +604,15 @@ def get_user_router() -> Router:
             f"\n🤝 <b>Рефералы:</b> {referral_count}"
             f"\n💰 <b>Заработано по рефералке (всего):</b> {total_ref_earned:.2f} RUB"
         )
+        try:
+            device_summary = get_desktop_device_summary(user_id)
+        except Exception:
+            device_summary = {}
+        final_text += (
+            f"\n\n🖥 <b>Устройства:</b> {int(device_summary.get('total_devices') or 0)}"
+            f"\n🟢 <b>Онлайн:</b> {int(device_summary.get('online_devices') or 0)}"
+            f"\n🔐 <b>С VPN:</b> {int(device_summary.get('connected_devices') or 0)}"
+        )
         await callback.message.edit_text(final_text, reply_markup=keyboards.create_profile_keyboard())
 
     @user_router.callback_query(F.data == "profile_info")
@@ -642,6 +652,13 @@ def get_user_router() -> Router:
         final_text += f"\n✅ <b>Активных ключей:</b> {len(active_keys)}"
         final_text += f"\n💸 <b>Потрачено всего:</b> {total_spent:.2f} RUB"
         final_text += f"\n📅 <b>Месяцев подписки:</b> {total_months}"
+        try:
+            device_summary = get_desktop_device_summary(user_id)
+        except Exception:
+            device_summary = {}
+        final_text += f"\n🖥 <b>Устройств:</b> {int(device_summary.get('total_devices') or 0)}"
+        final_text += f"\n🟢 <b>Онлайн:</b> {int(device_summary.get('online_devices') or 0)}"
+        final_text += f"\n🔐 <b>VPN-подключений:</b> {int(device_summary.get('connected_devices') or 0)}"
         
         builder = InlineKeyboardBuilder()
         builder.button(text="⬅️ Назад", callback_data="show_profile")

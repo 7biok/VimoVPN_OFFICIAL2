@@ -19,6 +19,7 @@ public sealed class SubscriptionEndpoint
     public string? PublicKey { get; init; }
     public string? ShortId { get; init; }
     public string? Fingerprint { get; init; }
+    public bool AllowInsecureTls { get; init; }
     public string? Network { get; init; }
     public string? VmessSecurity { get; init; }
     public int? AlterId { get; init; }

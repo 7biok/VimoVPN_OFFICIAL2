@@ -12,6 +12,13 @@
   <td>
     {% if user.user_keys %} {{ user.user_keys | length }} шт. {% else %} 0 {% endif %}
   </td>
+  <td>
+    {% set device_summary = user.desktop_device_summary or {} %}
+    <div class="d-flex flex-column gap-1">
+      <span>{{ device_summary.total_devices or 0 }} всего</span>
+      <span class="small text-secondary">{{ device_summary.online_devices or 0 }} онлайн · {{ device_summary.connected_devices or 0 }} с VPN</span>
+    </div>
+  </td>
   <td>{{ '%.2f'|format(user.balance or 0) }}</td>
   <td>
     <div class="btn-list">
@@ -58,7 +65,7 @@
   </td>
 </tr>
 <tr class="keys-row" id="keys-{{ user.telegram_id }}" style="display:none;">
-  <td colspan="6">
+  <td colspan="7">
     <div class="card">
       <div class="card-header"><strong>Ключи пользователя</strong></div>
       <div class="card-body p-2">
@@ -90,6 +97,49 @@
         {% else %}
           <div class="text-secondary">Ключей нет</div>
         {% endif %}
+
+        <div class="mt-3 pt-3 border-top">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Устройства клиента</strong>
+            <span class="text-secondary small">
+              {{ (user.desktop_device_summary or {}).total_devices or 0 }} всего ·
+              {{ (user.desktop_device_summary or {}).connected_devices or 0 }} с VPN
+            </span>
+          </div>
+          {% if user.desktop_devices %}
+          <div class="table-responsive">
+            <table class="table table-sm table-vcenter">
+              <thead>
+                <tr>
+                  <th>Устройство</th>
+                  <th>ОС</th>
+                  <th>Статус</th>
+                  <th>Маршрут</th>
+                  <th>Версия</th>
+                  <th>Последняя активность</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for device in user.desktop_devices %}
+                <tr>
+                  <td>
+                    <strong>{{ device.device_name or device.machine_name or device.device_id }}</strong>
+                    <div class="text-secondary small">{{ device.machine_name or '—' }}</div>
+                  </td>
+                  <td>{{ device.os_version or 'Unknown' }}</td>
+                  <td>{{ device.state_label or '—' }}</td>
+                  <td>{{ device.active_host_name or device.active_endpoint or '—' }}</td>
+                  <td>{{ device.app_version or '—' }}</td>
+                  <td>{{ device.last_seen_at or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-secondary">Клиентские устройства ещё не подключались.</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </td>

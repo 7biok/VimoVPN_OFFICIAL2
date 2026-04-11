@@ -91,6 +91,12 @@ public sealed class DesktopProfileResponse
     [JsonPropertyName("keys")]
     public List<DesktopKeyDto> Keys { get; set; } = [];
 
+    [JsonPropertyName("devices")]
+    public List<DesktopDeviceDto> Devices { get; set; } = [];
+
+    [JsonPropertyName("device_summary")]
+    public DesktopDeviceSummaryDto? DeviceSummary { get; set; }
+
     [JsonPropertyName("generated_at_timestamp_ms")]
     public long? GeneratedAtTimestampMs { get; set; }
 }
@@ -111,6 +117,15 @@ public sealed class DesktopUserSummaryDto
 
     [JsonPropertyName("keys_count")]
     public int KeysCount { get; set; }
+
+    [JsonPropertyName("device_count")]
+    public int DeviceCount { get; set; }
+
+    [JsonPropertyName("online_device_count")]
+    public int OnlineDeviceCount { get; set; }
+
+    [JsonPropertyName("connected_device_count")]
+    public int ConnectedDeviceCount { get; set; }
 }
 
 public sealed class DesktopKeyDto
@@ -165,4 +180,148 @@ public sealed class DesktopKeyDto
 
     [JsonPropertyName("can_connect")]
     public bool CanConnect { get; set; }
+}
+
+public sealed class DesktopDeviceDto
+{
+    [JsonPropertyName("device_id")]
+    public string? DeviceId { get; set; }
+
+    [JsonPropertyName("telegram_user_id")]
+    public long TelegramUserId { get; set; }
+
+    [JsonPropertyName("client_name")]
+    public string? ClientName { get; set; }
+
+    [JsonPropertyName("device_name")]
+    public string? DeviceName { get; set; }
+
+    [JsonPropertyName("machine_name")]
+    public string? MachineName { get; set; }
+
+    [JsonPropertyName("os_version")]
+    public string? OsVersion { get; set; }
+
+    [JsonPropertyName("app_version")]
+    public string? AppVersion { get; set; }
+
+    [JsonPropertyName("is_online")]
+    public bool IsOnline { get; set; }
+
+    [JsonPropertyName("vpn_connected")]
+    public bool VpnConnected { get; set; }
+
+    [JsonPropertyName("active_key_id")]
+    public int? ActiveKeyId { get; set; }
+
+    [JsonPropertyName("active_host_name")]
+    public string? ActiveHostName { get; set; }
+
+    [JsonPropertyName("active_endpoint")]
+    public string? ActiveEndpoint { get; set; }
+
+    [JsonPropertyName("state_label")]
+    public string? StateLabel { get; set; }
+
+    [JsonPropertyName("last_seen_at")]
+    public string? LastSeenAt { get; set; }
+}
+
+public sealed class DesktopDeviceSummaryDto
+{
+    [JsonPropertyName("total_devices")]
+    public int TotalDevices { get; set; }
+
+    [JsonPropertyName("online_devices")]
+    public int OnlineDevices { get; set; }
+
+    [JsonPropertyName("connected_devices")]
+    public int ConnectedDevices { get; set; }
+
+    [JsonPropertyName("total_connections")]
+    public int TotalConnections { get; set; }
+}
+
+public sealed class DesktopHeartbeatRequest
+{
+    [JsonPropertyName("device_id")]
+    public string? DeviceId { get; set; }
+
+    [JsonPropertyName("client_name")]
+    public string? ClientName { get; set; }
+
+    [JsonPropertyName("device_name")]
+    public string? DeviceName { get; set; }
+
+    [JsonPropertyName("machine_name")]
+    public string? MachineName { get; set; }
+
+    [JsonPropertyName("os_version")]
+    public string? OsVersion { get; set; }
+
+    [JsonPropertyName("app_version")]
+    public string? AppVersion { get; set; }
+
+    [JsonPropertyName("is_online")]
+    public bool IsOnline { get; set; }
+
+    [JsonPropertyName("vpn_connected")]
+    public bool VpnConnected { get; set; }
+
+    [JsonPropertyName("active_key_id")]
+    public int? ActiveKeyId { get; set; }
+
+    [JsonPropertyName("active_host_name")]
+    public string? ActiveHostName { get; set; }
+
+    [JsonPropertyName("active_endpoint")]
+    public string? ActiveEndpoint { get; set; }
+}
+
+public sealed class DesktopHeartbeatResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("details")]
+    public string? Details { get; set; }
+
+    [JsonPropertyName("device")]
+    public DesktopDeviceDto? Device { get; set; }
+
+    [JsonPropertyName("server_time_timestamp_ms")]
+    public long? ServerTimeTimestampMs { get; set; }
+}
+
+public sealed class DesktopUpdateManifestResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("details")]
+    public string? Details { get; set; }
+
+    [JsonPropertyName("latest_version")]
+    public string? LatestVersion { get; set; }
+
+    [JsonPropertyName("channel")]
+    public string? Channel { get; set; }
+
+    [JsonPropertyName("download_url")]
+    public string? DownloadUrl { get; set; }
+
+    [JsonPropertyName("release_notes")]
+    public string? ReleaseNotes { get; set; }
+
+    [JsonPropertyName("published_at")]
+    public string? PublishedAt { get; set; }
+
+    [JsonPropertyName("required")]
+    public bool Required { get; set; }
 }

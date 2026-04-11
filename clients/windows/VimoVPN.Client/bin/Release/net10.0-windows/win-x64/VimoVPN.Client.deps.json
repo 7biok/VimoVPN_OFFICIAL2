@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v10.0": {},
     ".NETCoreApp,Version=v10.0/win-x64": {
-      "VimoVPN.Client/1.0.0": {
+      "VimoVPN.Client/1.1.0": {
         "runtime": {
           "VimoVPN.Client.dll": {}
         }
@@ -15,7 +15,7 @@
     }
   },
   "libraries": {
-    "VimoVPN.Client/1.0.0": {
+    "VimoVPN.Client/1.1.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

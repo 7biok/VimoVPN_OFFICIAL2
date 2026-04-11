@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -20,10 +21,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _authPollTimer;
     private readonly DispatcherTimer _profileRefreshTimer;
 
+    private readonly string _deviceId;
+    private readonly string _currentAppVersion;
+
     private DesktopAuthSessionDto? _currentSession;
+    private DesktopKeyDto? _activeKey;
+    private SubscriptionEndpoint? _activeEndpoint;
     private string? _accessToken;
+    private string? _updateDownloadUrl;
+
     private bool _isAuthenticated;
     private bool _isBusy;
+    private bool _hasUpdateAvailable;
     private string _loginCodeDisplay = "#--------";
     private string _authStatusText = "Вход через Telegram";
     private string _userDisplayName = "VimoVPN";
@@ -34,6 +43,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _selectedServerDetails = "Лучший сервер будет выбран автоматически.";
     private string _apiBaseUrl;
     private string _telegramHandleText;
+    private string _currentVersionText;
+    private string _updateStatusText = "Обновления не проверялись";
+    private string _updateReleaseNotesText = "Стабильный канал обновлений";
+    private string _deviceSummaryText = "Нет активных устройств";
     private ObservableCollection<ServerCardModel> _serverCards = [];
 
     public MainWindow()
@@ -51,6 +64,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _profileRefreshTimer.Tick += ProfileRefreshTimer_Tick;
         _apiBaseUrl = _config.ApiBaseUrl;
         _telegramHandleText = BuildTelegramHandleText(_config.PublicTelegramUrl);
+        _deviceId = _authStorage.GetOrCreateDeviceId();
+        _currentAppVersion = ResolveAppVersion();
+        _currentVersionText = $"v{_currentAppVersion}";
 
         DataContext = this;
     }
@@ -73,6 +89,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get => _isAuthenticated;
         set => SetField(ref _isAuthenticated, value);
+    }
+
+    public bool HasUpdateAvailable
+    {
+        get => _hasUpdateAvailable;
+        set => SetField(ref _hasUpdateAvailable, value);
     }
 
     public string LoginCodeDisplay
@@ -123,6 +145,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set => SetField(ref _selectedServerDetails, value);
     }
 
+    public string CurrentVersionText
+    {
+        get => _currentVersionText;
+        set => SetField(ref _currentVersionText, value);
+    }
+
+    public string UpdateStatusText
+    {
+        get => _updateStatusText;
+        set => SetField(ref _updateStatusText, value);
+    }
+
+    public string UpdateReleaseNotesText
+    {
+        get => _updateReleaseNotesText;
+        set => SetField(ref _updateReleaseNotesText, value);
+    }
+
+    public string DeviceSummaryText
+    {
+        get => _deviceSummaryText;
+        set => SetField(ref _deviceSummaryText, value);
+    }
+
     public ObservableCollection<ServerCardModel> ServerCards
     {
         get => _serverCards;
@@ -131,6 +177,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        await CheckForUpdatesAsync(silent: true);
+
         _accessToken = _authStorage.LoadAccessToken();
         if (!string.IsNullOrWhiteSpace(_accessToken))
         {
@@ -143,6 +191,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _authPollTimer.Stop();
         _profileRefreshTimer.Stop();
+        await SendHeartbeatAsync(isOnline: false, silent: true);
         await _vpnEngine.DisposeAsync();
         _subscriptionResolver.Dispose();
         _apiClient.Dispose();
@@ -167,12 +216,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var response = await _apiClient.StartAuthSessionAsync(_config.ClientName, CancellationToken.None);
             if (!response.Ok || response.Session is null || string.IsNullOrWhiteSpace(response.Session.SessionId))
             {
-                var errorText = response.Error ?? "unknown_error";
-                if (!string.IsNullOrWhiteSpace(response.Details) && !string.Equals(response.Details, errorText, StringComparison.OrdinalIgnoreCase))
-                {
-                    errorText = $"{errorText}";
-                }
-                AuthStatusText = $"Не удалось создать код: {errorText}";
+                AuthStatusText = $"Не удалось создать код: {response.Error ?? "unknown_error"}";
                 return;
             }
 
@@ -256,6 +300,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await LoadProfileAsync(false);
     }
 
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        if (HasUpdateAvailable && !string.IsNullOrWhiteSpace(_updateDownloadUrl))
+        {
+            OpenUpdateDownload_Click(sender, e);
+            return;
+        }
+        await CheckForUpdatesAsync(silent: false);
+    }
+
+    private void OpenUpdateDownload_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_updateDownloadUrl))
+        {
+            UpdateStatusText = "Ссылка на обновление не настроена";
+            return;
+        }
+
+        try
+        {
+            OpenExternal(_updateDownloadUrl);
+        }
+        catch (Exception exc)
+        {
+            UpdateStatusText = $"Не удалось открыть загрузку: {exc.Message}";
+        }
+    }
+
     private async void ConnectBest_Click(object sender, RoutedEventArgs e)
     {
         var connectable = ServerCards.Where(card => card.Key.CanConnect).Select(card => card.Key).ToList();
@@ -279,25 +351,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void Disconnect_Click(object sender, RoutedEventArgs e)
     {
         await _vpnEngine.DisconnectAsync();
+        _activeKey = null;
+        _activeEndpoint = null;
         ConnectionStatusText = "Отключено";
         SelectedServerName = "Маршрут не выбран";
         SelectedServerDetails = "Туннель остановлен.";
+        await SendHeartbeatAsync(isOnline: true, silent: true);
     }
 
     private async void ResetLogin_Click(object sender, RoutedEventArgs e)
     {
+        await SendHeartbeatAsync(isOnline: false, silent: true);
         await _vpnEngine.DisconnectAsync();
         _profileRefreshTimer.Stop();
         _authPollTimer.Stop();
         _authStorage.Clear();
         _accessToken = null;
         _currentSession = null;
+        _activeKey = null;
+        _activeEndpoint = null;
         IsAuthenticated = false;
         LoginCodeDisplay = "#--------";
         AuthStatusText = "Вход через Telegram";
         UserDisplayName = "VimoVPN";
         ProfileMetaText = "Ожидание входа";
         TrafficSummaryText = "Трафик появится после загрузки ключей.";
+        DeviceSummaryText = "Нет активных устройств";
         ConnectionStatusText = "Ожидание входа";
         SelectedServerName = "Маршрут не выбран";
         SelectedServerDetails = "Лучший сервер будет выбран автоматически.";
@@ -332,10 +411,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _profileRefreshTimer.Start();
             UserDisplayName = response.User.DisplayName ?? $"user_{response.User.TelegramId}";
             ProfileMetaText = BuildProfileMetaText(response.User);
+            DeviceSummaryText = BuildDeviceSummary(response.DeviceSummary);
             ServerCards = new ObservableCollection<ServerCardModel>(response.Keys.Select(BuildServerCard));
             TrafficSummaryText = BuildTrafficSummary(response.Keys);
             ConnectionStatusText = _vpnEngine.IsRunning ? ConnectionStatusText : "Готов к подключению";
             AuthStatusText = "Вход выполнен";
+            await SendHeartbeatAsync(isOnline: true, silent: true);
         }
         catch (Exception exc)
         {
@@ -348,6 +429,89 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _isBusy = false;
         }
+    }
+
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        try
+        {
+            var response = await _apiClient.GetUpdateManifestAsync(CancellationToken.None);
+            if (!response.Ok)
+            {
+                if (!silent)
+                {
+                    UpdateStatusText = $"Ошибка проверки обновлений: {response.Error ?? "unknown_error"}";
+                }
+                return;
+            }
+
+            _updateDownloadUrl = response.DownloadUrl;
+            UpdateReleaseNotesText = string.IsNullOrWhiteSpace(response.ReleaseNotes)
+                ? "Стабильный канал обновлений"
+                : response.ReleaseNotes!;
+
+            if (string.IsNullOrWhiteSpace(response.LatestVersion))
+            {
+                HasUpdateAvailable = false;
+                UpdateStatusText = "Сервер обновлений не отдал версию";
+                return;
+            }
+
+            var hasUpdate = CompareVersions(response.LatestVersion, _currentAppVersion) > 0;
+            HasUpdateAvailable = hasUpdate;
+            UpdateStatusText = hasUpdate
+                ? $"Доступна версия {response.LatestVersion}"
+                : $"Актуальная версия {_currentAppVersion}";
+        }
+        catch (Exception exc)
+        {
+            if (!silent)
+            {
+                UpdateStatusText = $"Проверка обновлений не удалась: {exc.Message}";
+            }
+        }
+    }
+
+    private async Task SendHeartbeatAsync(bool isOnline, bool silent)
+    {
+        if (string.IsNullOrWhiteSpace(_accessToken))
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await _apiClient.SendHeartbeatAsync(_accessToken, BuildHeartbeatPayload(isOnline), CancellationToken.None);
+            if (!response.Ok && !silent)
+            {
+                ConnectionStatusText = $"Heartbeat ошибка: {response.Error ?? "unknown_error"}";
+            }
+        }
+        catch (Exception exc)
+        {
+            if (!silent)
+            {
+                ConnectionStatusText = $"Heartbeat ошибка: {exc.Message}";
+            }
+        }
+    }
+
+    private DesktopHeartbeatRequest BuildHeartbeatPayload(bool isOnline)
+    {
+        return new DesktopHeartbeatRequest
+        {
+            DeviceId = _deviceId,
+            ClientName = _config.ClientName,
+            DeviceName = "VimoVPN Windows",
+            MachineName = Environment.MachineName,
+            OsVersion = Environment.OSVersion.VersionString,
+            AppVersion = _currentAppVersion,
+            IsOnline = isOnline,
+            VpnConnected = isOnline && _vpnEngine.IsRunning,
+            ActiveKeyId = _activeKey?.KeyId,
+            ActiveHostName = _activeKey?.HostName,
+            ActiveEndpoint = _activeEndpoint is null ? null : $"{_activeEndpoint.Protocol} · {_activeEndpoint.DisplayName}",
+        };
     }
 
     private async Task ConnectAsync(IEnumerable<DesktopKeyDto> sourceKeys)
@@ -388,6 +552,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var best = candidates.Where(item => item.PingMs.HasValue).OrderBy(item => item.PingMs!.Value).FirstOrDefault() ?? candidates.First();
             ConnectionStatusText = $"Подключаю {best.Endpoint.DisplayName}…";
+
             var singboxPath = _config.ResolveSingboxPath(AppContext.BaseDirectory);
             var result = await _vpnEngine.ConnectAsync(best.Endpoint, singboxPath, CancellationToken.None);
             if (!result.Success)
@@ -396,9 +561,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
 
+            _activeKey = best.SourceKey;
+            _activeEndpoint = best.Endpoint;
             SelectedServerName = $"{best.SourceKey.HostName} · {best.Endpoint.DisplayName}";
             SelectedServerDetails = $"Ping {(best.PingMs.HasValue ? $"{best.PingMs.Value} мс" : "н/д")} · {best.Endpoint.Protocol}";
             ConnectionStatusText = "Подключено";
+            await SendHeartbeatAsync(isOnline: true, silent: true);
         }
         catch (Exception exc)
         {
@@ -528,7 +696,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         parts.Add($"ID {user.TelegramId}");
         parts.Add($"Ключей {user.KeysCount}");
+        parts.Add($"Устройств {user.DeviceCount}");
         return string.Join(" • ", parts);
+    }
+
+    private static string BuildDeviceSummary(DesktopDeviceSummaryDto? summary)
+    {
+        if (summary is null || summary.TotalDevices <= 0)
+        {
+            return "Устройства появятся после первой авторизации клиента.";
+        }
+
+        return $"{summary.TotalDevices} устройств · {summary.OnlineDevices} онлайн · {summary.ConnectedDevices} с VPN";
     }
 
     private static string BuildTrafficSummary(IEnumerable<DesktopKeyDto> keys)
@@ -632,6 +811,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return value.Replace("https://", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("http://", string.Empty, StringComparison.OrdinalIgnoreCase)
             .TrimEnd('/');
+    }
+
+    private static string ResolveAppVersion()
+    {
+        var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+        return string.IsNullOrWhiteSpace(assemblyVersion) ? "1.0.0" : assemblyVersion;
+    }
+
+    private static int CompareVersions(string left, string right)
+    {
+        left = NormalizeVersion(left);
+        right = NormalizeVersion(right);
+        if (!Version.TryParse(left, out var leftVersion))
+        {
+            leftVersion = new Version(0, 0, 0, 0);
+        }
+        if (!Version.TryParse(right, out var rightVersion))
+        {
+            rightVersion = new Version(0, 0, 0, 0);
+        }
+        return leftVersion.CompareTo(rightVersion);
+    }
+
+    private static string NormalizeVersion(string rawVersion)
+    {
+        var segments = (rawVersion ?? string.Empty)
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(segment => int.TryParse(segment, out _))
+            .Take(4)
+            .ToList();
+
+        while (segments.Count < 4)
+        {
+            segments.Add("0");
+        }
+
+        return segments.Count == 0 ? "0.0.0.0" : string.Join('.', segments);
     }
 
     private static bool TryCopyToClipboard(string? value)

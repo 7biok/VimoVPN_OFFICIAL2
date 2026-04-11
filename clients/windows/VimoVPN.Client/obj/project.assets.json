@@ -12,7 +12,7 @@
     "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\.dotnet-home\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "restore": {
       "projectUniqueName": "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\clients\\windows\\VimoVPN.Client\\VimoVPN.Client.csproj",
       "projectName": "VimoVPN.Client",

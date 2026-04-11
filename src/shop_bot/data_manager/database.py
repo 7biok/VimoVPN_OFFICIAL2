@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import json
@@ -232,6 +232,32 @@ def initialize_db():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_code ON desktop_auth_sessions(code)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_token ON desktop_auth_sessions(access_token)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_user ON desktop_auth_sessions(telegram_user_id)")
+            cursor.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS desktop_client_devices (
+                    device_id TEXT PRIMARY KEY,
+                    telegram_user_id INTEGER NOT NULL,
+                    client_name TEXT,
+                    device_name TEXT,
+                    machine_name TEXT,
+                    os_version TEXT,
+                    app_version TEXT,
+                    is_online INTEGER NOT NULL DEFAULT 0,
+                    vpn_connected INTEGER NOT NULL DEFAULT 0,
+                    active_key_id INTEGER,
+                    active_host_name TEXT,
+                    active_endpoint TEXT,
+                    public_ip TEXT,
+                    connection_count INTEGER NOT NULL DEFAULT 0,
+                    last_connected_at TIMESTAMP,
+                    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+            )
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_devices_user ON desktop_client_devices(telegram_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_devices_seen ON desktop_client_devices(last_seen_at DESC)")
              
             default_settings = {
                 "panel_login": "admin",
@@ -1092,6 +1118,55 @@ def run_migration():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_code ON desktop_auth_sessions(code)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_token ON desktop_auth_sessions(access_token)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_user ON desktop_auth_sessions(telegram_user_id)")
+            cursor.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS desktop_client_devices (
+                    device_id TEXT PRIMARY KEY,
+                    telegram_user_id INTEGER NOT NULL,
+                    client_name TEXT,
+                    device_name TEXT,
+                    machine_name TEXT,
+                    os_version TEXT,
+                    app_version TEXT,
+                    is_online INTEGER NOT NULL DEFAULT 0,
+                    vpn_connected INTEGER NOT NULL DEFAULT 0,
+                    active_key_id INTEGER,
+                    active_host_name TEXT,
+                    active_endpoint TEXT,
+                    public_ip TEXT,
+                    connection_count INTEGER NOT NULL DEFAULT 0,
+                    last_connected_at TIMESTAMP,
+                    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                '''
+            )
+            cursor.execute("PRAGMA table_info(desktop_client_devices)")
+            dcd_cols = {row[1] for row in cursor.fetchall()}
+            desktop_device_columns = {
+                'client_name': "ALTER TABLE desktop_client_devices ADD COLUMN client_name TEXT",
+                'device_name': "ALTER TABLE desktop_client_devices ADD COLUMN device_name TEXT",
+                'machine_name': "ALTER TABLE desktop_client_devices ADD COLUMN machine_name TEXT",
+                'os_version': "ALTER TABLE desktop_client_devices ADD COLUMN os_version TEXT",
+                'app_version': "ALTER TABLE desktop_client_devices ADD COLUMN app_version TEXT",
+                'is_online': "ALTER TABLE desktop_client_devices ADD COLUMN is_online INTEGER NOT NULL DEFAULT 0",
+                'vpn_connected': "ALTER TABLE desktop_client_devices ADD COLUMN vpn_connected INTEGER NOT NULL DEFAULT 0",
+                'active_key_id': "ALTER TABLE desktop_client_devices ADD COLUMN active_key_id INTEGER",
+                'active_host_name': "ALTER TABLE desktop_client_devices ADD COLUMN active_host_name TEXT",
+                'active_endpoint': "ALTER TABLE desktop_client_devices ADD COLUMN active_endpoint TEXT",
+                'public_ip': "ALTER TABLE desktop_client_devices ADD COLUMN public_ip TEXT",
+                'connection_count': "ALTER TABLE desktop_client_devices ADD COLUMN connection_count INTEGER NOT NULL DEFAULT 0",
+                'last_connected_at': "ALTER TABLE desktop_client_devices ADD COLUMN last_connected_at TIMESTAMP",
+                'last_seen_at': "ALTER TABLE desktop_client_devices ADD COLUMN last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'created_at': "ALTER TABLE desktop_client_devices ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'updated_at': "ALTER TABLE desktop_client_devices ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            }
+            for column_name, statement in desktop_device_columns.items():
+                if column_name not in dcd_cols:
+                    cursor.execute(statement)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_devices_user ON desktop_client_devices(telegram_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_devices_seen ON desktop_client_devices(last_seen_at DESC)")
             conn.commit()
         except sqlite3.Error as e:
             logging.error(f"Не удалось подготовить таблицу instant_access_orders: {e}")
@@ -2139,6 +2214,272 @@ def touch_desktop_auth_session(access_token: str) -> bool:
         logging.error(f"Не удалось обновить last_seen для desktop_auth_sessions token: {e}")
         return False
 
+def _parse_db_datetime_value(value) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for candidate in (text, text.replace("Z", "+00:00")):
+        try:
+            return datetime.fromisoformat(candidate)
+        except Exception:
+            continue
+    return None
+
+def _serialize_desktop_device_row(row: sqlite3.Row | dict | None, stale_after_minutes: int = 10) -> dict | None:
+    if not row:
+        return None
+    item = dict(row)
+    last_seen_at = _parse_db_datetime_value(item.get("last_seen_at"))
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=max(1, int(stale_after_minutes or 10)))
+    is_recent = bool(last_seen_at and last_seen_at >= recent_cutoff)
+    is_online = bool(item.get("is_online")) and is_recent
+    vpn_connected = bool(item.get("vpn_connected")) and is_recent
+    item["is_recent"] = is_recent
+    item["is_online"] = is_online
+    item["vpn_connected"] = vpn_connected
+    item["connection_count"] = int(item.get("connection_count") or 0)
+    item["state_label"] = "VPN подключён" if vpn_connected else ("Онлайн" if is_online else "Неактивно")
+    return item
+
+def upsert_desktop_client_device(
+    *,
+    telegram_user_id: int,
+    device_id: str,
+    client_name: str | None = None,
+    device_name: str | None = None,
+    machine_name: str | None = None,
+    os_version: str | None = None,
+    app_version: str | None = None,
+    is_online: bool = False,
+    vpn_connected: bool = False,
+    active_key_id: int | None = None,
+    active_host_name: str | None = None,
+    active_endpoint: str | None = None,
+    public_ip: str | None = None,
+) -> dict | None:
+    try:
+        user_id_int = int(telegram_user_id)
+    except Exception:
+        return None
+    device_id_s = (device_id or "").strip()
+    if not device_id_s:
+        return None
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT vpn_connected, connection_count FROM desktop_client_devices WHERE device_id = ? LIMIT 1",
+                (device_id_s,),
+            )
+            existing = cursor.fetchone()
+            was_connected = bool(existing["vpn_connected"]) if existing else False
+            connection_count = int(existing["connection_count"] or 0) if existing else 0
+            if vpn_connected and not was_connected:
+                connection_count += 1
+
+            payload = (
+                user_id_int,
+                (client_name or "").strip() or None,
+                (device_name or "").strip() or None,
+                (machine_name or "").strip() or None,
+                (os_version or "").strip() or None,
+                (app_version or "").strip() or None,
+                1 if bool(is_online) else 0,
+                1 if bool(vpn_connected) else 0,
+                int(active_key_id) if active_key_id else None,
+                normalize_host_name(active_host_name) if active_host_name else None,
+                (active_endpoint or "").strip() or None,
+                (public_ip or "").strip() or None,
+                connection_count,
+                datetime.utcnow().isoformat() if vpn_connected else None,
+                device_id_s,
+            )
+
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE desktop_client_devices
+                    SET telegram_user_id = ?,
+                        client_name = ?,
+                        device_name = ?,
+                        machine_name = ?,
+                        os_version = ?,
+                        app_version = ?,
+                        is_online = ?,
+                        vpn_connected = ?,
+                        active_key_id = ?,
+                        active_host_name = ?,
+                        active_endpoint = ?,
+                        public_ip = ?,
+                        connection_count = ?,
+                        last_connected_at = COALESCE(?, last_connected_at),
+                        last_seen_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE device_id = ?
+                    """,
+                    payload,
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO desktop_client_devices (
+                        telegram_user_id, client_name, device_name, machine_name, os_version, app_version,
+                        is_online, vpn_connected, active_key_id, active_host_name, active_endpoint, public_ip,
+                        connection_count, last_connected_at, device_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload,
+                )
+            conn.commit()
+            cursor.execute("SELECT * FROM desktop_client_devices WHERE device_id = ? LIMIT 1", (device_id_s,))
+            row = cursor.fetchone()
+            return _serialize_desktop_device_row(row)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось сохранить desktop_client_devices запись для {device_id_s}: {e}")
+        return None
+
+def get_user_desktop_devices(user_id: int, stale_after_minutes: int = 10) -> list[dict]:
+    try:
+        user_id_int = int(user_id)
+    except Exception:
+        return []
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT *
+                FROM desktop_client_devices
+                WHERE telegram_user_id = ?
+                ORDER BY vpn_connected DESC, datetime(last_seen_at) DESC, datetime(created_at) DESC
+                """,
+                (user_id_int,),
+            )
+            rows = cursor.fetchall() or []
+            return [item for item in (_serialize_desktop_device_row(row, stale_after_minutes) for row in rows) if item]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить desktop_client_devices для пользователя {user_id}: {e}")
+        return []
+
+def get_recent_desktop_devices(limit: int = 20, user_id: int | None = None, stale_after_minutes: int = 10) -> list[dict]:
+    params: list = []
+    where_sql = ""
+    if user_id is not None:
+        try:
+            params.append(int(user_id))
+            where_sql = "WHERE telegram_user_id = ?"
+        except Exception:
+            return []
+    params.append(max(1, int(limit or 20)))
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT *
+                FROM desktop_client_devices
+                {where_sql}
+                ORDER BY datetime(last_seen_at) DESC, datetime(updated_at) DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            )
+            rows = cursor.fetchall() or []
+            return [item for item in (_serialize_desktop_device_row(row, stale_after_minutes) for row in rows) if item]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить recent desktop devices: {e}")
+        return []
+
+def get_desktop_device_summary(user_id: int | None = None, stale_after_minutes: int = 10) -> dict:
+    params: list = [f"-{max(1, int(stale_after_minutes or 10))} minutes", f"-{max(1, int(stale_after_minutes or 10))} minutes"]
+    where_sql = ""
+    if user_id is not None:
+        try:
+            params.append(int(user_id))
+            where_sql = "WHERE telegram_user_id = ?"
+        except Exception:
+            return {
+                "total_devices": 0,
+                "online_devices": 0,
+                "connected_devices": 0,
+                "total_connections": 0,
+            }
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_devices,
+                    COALESCE(SUM(CASE WHEN is_online = 1 AND datetime(last_seen_at) >= datetime('now', ?) THEN 1 ELSE 0 END), 0) AS online_devices,
+                    COALESCE(SUM(CASE WHEN vpn_connected = 1 AND datetime(last_seen_at) >= datetime('now', ?) THEN 1 ELSE 0 END), 0) AS connected_devices,
+                    COALESCE(SUM(connection_count), 0) AS total_connections
+                FROM desktop_client_devices
+                {where_sql}
+                """,
+                tuple(params),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return {
+                    "total_devices": 0,
+                    "online_devices": 0,
+                    "connected_devices": 0,
+                    "total_connections": 0,
+                }
+            return {
+                "total_devices": int(row[0] or 0),
+                "online_devices": int(row[1] or 0),
+                "connected_devices": int(row[2] or 0),
+                "total_connections": int(row[3] or 0),
+            }
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить desktop devices summary: {e}")
+        return {
+            "total_devices": 0,
+            "online_devices": 0,
+            "connected_devices": 0,
+            "total_connections": 0,
+        }
+
+def get_desktop_os_breakdown(user_id: int | None = None) -> list[dict]:
+    params: list = []
+    where_sql = ""
+    if user_id is not None:
+        try:
+            params.append(int(user_id))
+            where_sql = "WHERE telegram_user_id = ?"
+        except Exception:
+            return []
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT
+                    CASE
+                        WHEN TRIM(COALESCE(os_version, '')) = '' THEN 'Unknown'
+                        ELSE os_version
+                    END AS os_name,
+                    COUNT(*) AS total_devices
+                FROM desktop_client_devices
+                {where_sql}
+                GROUP BY os_name
+                ORDER BY total_devices DESC, os_name ASC
+                LIMIT 8
+                """,
+                tuple(params),
+            )
+            return [dict(row) for row in cursor.fetchall() or []]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить desktop os breakdown: {e}")
+        return []
+
 def insert_host_speedtest(
     host_name: str,
     method: str,
@@ -2257,6 +2598,98 @@ def get_admin_stats() -> dict:
     except sqlite3.Error as e:
         logging.error(f"Не удалось получить статистику администратора: {e}")
     return stats
+
+def get_daily_revenue_series(days: int = 30) -> dict:
+    stats: dict[str, float] = {}
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT date(created_date) AS day, COALESCE(SUM(amount_rub), 0)
+                FROM transactions
+                WHERE created_date >= date('now', ?)
+                  AND status IN ('paid', 'success', 'succeeded')
+                  AND LOWER(COALESCE(payment_method, '')) <> 'balance'
+                GROUP BY day
+                ORDER BY day
+                """,
+                (f'-{max(1, int(days or 30))} days',),
+            )
+            for row in cursor.fetchall() or []:
+                stats[str(row[0])] = float(row[1] or 0)
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить дневную выручку: {e}")
+    return stats
+
+def get_payment_method_breakdown(days: int = 30) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN TRIM(COALESCE(payment_method, '')) = '' THEN 'Unknown'
+                        ELSE payment_method
+                    END AS payment_method,
+                    COUNT(*) AS payments_count,
+                    COALESCE(SUM(amount_rub), 0) AS total_rub
+                FROM transactions
+                WHERE created_date >= date('now', ?)
+                  AND status IN ('paid', 'success', 'succeeded')
+                GROUP BY payment_method
+                ORDER BY total_rub DESC, payments_count DESC
+                """,
+                (f'-{max(1, int(days or 30))} days',),
+            )
+            return [dict(row) for row in cursor.fetchall() or []]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить статистику методов оплаты: {e}")
+        return []
+
+def get_host_panel_breakdown() -> list[dict]:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN TRIM(COALESCE(panel_type, '')) = '' THEN 'hiddify'
+                        ELSE LOWER(panel_type)
+                    END AS panel_type,
+                    COUNT(*) AS total_hosts
+                FROM xui_hosts
+                GROUP BY panel_type
+                ORDER BY total_hosts DESC, panel_type ASC
+                """
+            )
+            return [dict(row) for row in cursor.fetchall() or []]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить breakdown панелей: {e}")
+        return []
+
+def get_top_users_by_spend(limit: int = 5) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT telegram_id, username, total_spent, total_months
+                FROM users
+                ORDER BY total_spent DESC, total_months DESC, registration_date DESC
+                LIMIT ?
+                """,
+                (max(1, int(limit or 5)),),
+            )
+            return [dict(row) for row in cursor.fetchall() or []]
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить top users by spend: {e}")
+        return []
 
 def get_all_keys() -> list[dict]:
     try:

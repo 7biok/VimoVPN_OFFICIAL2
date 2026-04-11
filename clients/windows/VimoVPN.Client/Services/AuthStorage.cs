@@ -19,6 +19,53 @@ public sealed class AuthStorage
 
     public string? LoadAccessToken()
     {
+        var state = LoadState();
+        return string.IsNullOrWhiteSpace(state?.AccessToken) ? null : state.AccessToken;
+    }
+
+    public void SaveAccessToken(string accessToken)
+    {
+        var state = LoadState() ?? new AuthState();
+        state.AccessToken = accessToken;
+        if (string.IsNullOrWhiteSpace(state.DeviceId))
+        {
+            state.DeviceId = Guid.NewGuid().ToString("N");
+        }
+        SaveState(state);
+    }
+
+    public string GetOrCreateDeviceId()
+    {
+        var state = LoadState() ?? new AuthState();
+        if (string.IsNullOrWhiteSpace(state.DeviceId))
+        {
+            state.DeviceId = Guid.NewGuid().ToString("N");
+            SaveState(state);
+        }
+        return state.DeviceId!;
+    }
+
+    public void Clear()
+    {
+        var state = LoadState();
+        if (state is null)
+        {
+            return;
+        }
+        state.AccessToken = null;
+        if (string.IsNullOrWhiteSpace(state.DeviceId))
+        {
+            if (File.Exists(_stateFilePath))
+            {
+                File.Delete(_stateFilePath);
+            }
+            return;
+        }
+        SaveState(state);
+    }
+
+    private AuthState? LoadState()
+    {
         if (!File.Exists(_stateFilePath))
         {
             return null;
@@ -27,8 +74,7 @@ public sealed class AuthStorage
         try
         {
             var json = File.ReadAllText(_stateFilePath);
-            var state = JsonSerializer.Deserialize<AuthState>(json);
-            return string.IsNullOrWhiteSpace(state?.AccessToken) ? null : state.AccessToken;
+            return JsonSerializer.Deserialize<AuthState>(json);
         }
         catch
         {
@@ -36,22 +82,15 @@ public sealed class AuthStorage
         }
     }
 
-    public void SaveAccessToken(string accessToken)
+    private void SaveState(AuthState state)
     {
-        var payload = JsonSerializer.Serialize(new AuthState { AccessToken = accessToken });
+        var payload = JsonSerializer.Serialize(state);
         File.WriteAllText(_stateFilePath, payload);
-    }
-
-    public void Clear()
-    {
-        if (File.Exists(_stateFilePath))
-        {
-            File.Delete(_stateFilePath);
-        }
     }
 
     private sealed class AuthState
     {
         public string? AccessToken { get; set; }
+        public string? DeviceId { get; set; }
     }
 }

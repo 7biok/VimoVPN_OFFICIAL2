@@ -1,0 +1,8 @@
+{
+  "latest_version": "1.1.0",
+  "channel": "stable",
+  "download_url": "/desktop-app/client/download/latest",
+  "release_notes": "Новый dashboard-дизайн, heartbeat устройств, аналитика в админке и улучшенная диагностика sing-box.",
+  "published_at": "2026-04-11T00:00:00Z",
+  "required": false
+}

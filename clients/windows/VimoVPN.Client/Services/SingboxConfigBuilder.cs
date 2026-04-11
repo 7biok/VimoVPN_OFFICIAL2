@@ -12,6 +12,7 @@ public static class SingboxConfigBuilder
             ["log"] = new Dictionary<string, object?>
             {
                 ["level"] = "info",
+                ["timestamp"] = true,
             },
             ["dns"] = new Dictionary<string, object?>
             {
@@ -22,6 +23,7 @@ public static class SingboxConfigBuilder
                         ["tag"] = "remote",
                         ["address"] = "https://1.1.1.1/dns-query",
                         ["detour"] = "proxy",
+                        ["strategy"] = "ipv4_only",
                     },
                     new Dictionary<string, object?>
                     {
@@ -29,6 +31,8 @@ public static class SingboxConfigBuilder
                         ["address"] = "local",
                     },
                 },
+                ["strategy"] = "ipv4_only",
+                ["independent_cache"] = true,
                 ["final"] = "remote",
             },
             ["inbounds"] = new object[]
@@ -43,7 +47,8 @@ public static class SingboxConfigBuilder
                     ["auto_route"] = true,
                     ["strict_route"] = true,
                     ["sniff"] = true,
-                    ["stack"] = "system",
+                    ["sniff_override_destination"] = true,
+                    ["stack"] = "mixed",
                 },
             },
             ["outbounds"] = new object[]
@@ -63,6 +68,20 @@ public static class SingboxConfigBuilder
             ["route"] = new Dictionary<string, object?>
             {
                 ["auto_detect_interface"] = true,
+                ["rules"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["protocol"] = "dns",
+                        ["outbound"] = "proxy",
+                    },
+                    new Dictionary<string, object?>
+                    {
+                        ["network"] = "udp",
+                        ["port"] = 53,
+                        ["outbound"] = "proxy",
+                    },
+                },
                 ["final"] = "proxy",
             },
         };
@@ -154,8 +173,10 @@ public static class SingboxConfigBuilder
             var tls = new Dictionary<string, object?>
             {
                 ["enabled"] = true,
-                ["server_name"] = string.IsNullOrWhiteSpace(endpoint.Sni) ? endpoint.Server : endpoint.Sni,
-                ["insecure"] = false,
+                ["server_name"] = string.IsNullOrWhiteSpace(endpoint.Sni)
+                    ? (string.IsNullOrWhiteSpace(endpoint.HostHeader) ? endpoint.Server : endpoint.HostHeader)
+                    : endpoint.Sni,
+                ["insecure"] = endpoint.AllowInsecureTls,
             };
             if (!string.IsNullOrWhiteSpace(endpoint.Fingerprint))
             {
