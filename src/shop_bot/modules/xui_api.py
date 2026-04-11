@@ -801,6 +801,37 @@ def _build_marzban_connection_string(
     ) or base_link
 
 
+def _coerce_bytes_value(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if numeric < 0:
+        return None
+    return int(numeric)
+
+
+def _gb_to_bytes(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if numeric < 0:
+        return None
+    return int(numeric * 1024 * 1024 * 1024)
+
+
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 async def _get_connection_details(
     client: HiddifyClient,
     user_uuid: str,
@@ -822,6 +853,87 @@ async def _get_connection_details(
         derived_link=derived_link,
     )
     return connection_string or _build_fallback_link(client.config, user_uuid), profile_url
+
+
+async def get_key_runtime_state(key_data: dict[str, Any]) -> dict[str, Any] | None:
+    host_name = str(key_data.get("host_name") or "").strip()
+    if not host_name:
+        return None
+
+    host_data = get_host(host_name)
+    if not host_data:
+        return None
+
+    identifier = str(
+        key_data.get("xui_client_uuid")
+        or key_data.get("key_email")
+        or ""
+    ).strip()
+    if not identifier:
+        return None
+
+    panel_type = _get_host_panel_type(host_data)
+    key_email = str(key_data.get("key_email") or "").strip()
+    try:
+        if panel_type == "marzban":
+            config = _resolve_marzban_config(host_data)
+            async with MarzbanClient(config) as client:
+                user = _normalize_marzban_user(await client.get_user(identifier))
+                if not user and key_email and key_email != identifier:
+                    user = _normalize_marzban_user(await client.get_user(key_email))
+                if not user:
+                    return None
+                username = str((user or {}).get("username") or identifier).strip() or identifier
+                connection_string = _build_marzban_connection_string(config, user, username=username)
+                return {
+                    "panel_type": "marzban",
+                    "host_name": host_name,
+                    "connection_string": connection_string or _build_marzban_fallback_link(config, username),
+                    "expiry_timestamp_ms": get_user_expiry_timestamp_ms(user),
+                    "used_bytes": _coerce_bytes_value(user.get("used_traffic")),
+                    "limit_bytes": _coerce_bytes_value(user.get("data_limit")),
+                    "is_enabled": str(user.get("status") or "").strip().lower() == "active",
+                    "status": str(user.get("status") or "").strip().lower() or "unknown",
+                    "server_url": config.base_url,
+                }
+
+        config = _resolve_host_config(host_data)
+        async with HiddifyClient(config) as client:
+            user = await client.get_user(identifier)
+            if not user and key_email:
+                user = await _find_existing_hiddify_user(client, email=key_email, stored_uuid=identifier)
+            if not user:
+                return None
+            user_uuid = str(user.get("uuid") or identifier).strip() or identifier
+            connection_string, profile_url = await _get_connection_details(client, user_uuid)
+            return {
+                "panel_type": "hiddify",
+                "host_name": host_name,
+                "connection_string": connection_string or profile_url or _build_fallback_link(config, user_uuid),
+                "expiry_timestamp_ms": get_user_expiry_timestamp_ms(user),
+                "used_bytes": _first_not_none(
+                    _gb_to_bytes(user.get("current_usage_GB")),
+                    _coerce_bytes_value(user.get("current_usage_bytes")),
+                    _coerce_bytes_value(user.get("current_usage_B")),
+                ),
+                "limit_bytes": _first_not_none(
+                    _gb_to_bytes(user.get("usage_limit_GB")),
+                    _coerce_bytes_value(user.get("usage_limit_bytes")),
+                    _coerce_bytes_value(user.get("usage_limit_B")),
+                ),
+                "is_enabled": bool(user.get("enable", True)),
+                "status": "active" if bool(user.get("enable", True)) else "disabled",
+                "server_url": config.base_url,
+            }
+    except Exception as exc:
+        logger.error(
+            "Failed to fetch runtime state for key %s on host '%s': %s",
+            key_data.get("key_id"),
+            host_name,
+            exc,
+            exc_info=True,
+        )
+        return None
 
 
 async def _create_or_update_key_on_hiddify(

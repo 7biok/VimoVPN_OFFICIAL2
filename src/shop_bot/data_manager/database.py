@@ -213,6 +213,25 @@ def initialize_db():
             ''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_payment_id ON instant_access_orders(payment_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_bound_user ON instant_access_orders(bound_user_id)")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS desktop_auth_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    code TEXT NOT NULL UNIQUE,
+                    access_token TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    telegram_user_id INTEGER,
+                    client_name TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    code_expires_at TIMESTAMP NOT NULL,
+                    token_expires_at TIMESTAMP NOT NULL,
+                    bound_at TIMESTAMP,
+                    last_seen_at TIMESTAMP
+                )
+            ''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_code ON desktop_auth_sessions(code)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_token ON desktop_auth_sessions(access_token)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_user ON desktop_auth_sessions(telegram_user_id)")
              
             default_settings = {
                 "panel_login": "admin",
@@ -1036,6 +1055,43 @@ def run_migration():
                     cursor.execute(statement)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_payment_id ON instant_access_orders(payment_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_instant_access_bound_user ON instant_access_orders(bound_user_id)")
+            cursor.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS desktop_auth_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    code TEXT NOT NULL UNIQUE,
+                    access_token TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    telegram_user_id INTEGER,
+                    client_name TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    code_expires_at TIMESTAMP NOT NULL,
+                    token_expires_at TIMESTAMP NOT NULL,
+                    bound_at TIMESTAMP,
+                    last_seen_at TIMESTAMP
+                )
+                '''
+            )
+            cursor.execute("PRAGMA table_info(desktop_auth_sessions)")
+            das_cols = {row[1] for row in cursor.fetchall()}
+            desktop_columns = {
+                'status': "ALTER TABLE desktop_auth_sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
+                'telegram_user_id': "ALTER TABLE desktop_auth_sessions ADD COLUMN telegram_user_id INTEGER",
+                'client_name': "ALTER TABLE desktop_auth_sessions ADD COLUMN client_name TEXT",
+                'created_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'updated_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                'code_expires_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN code_expires_at TIMESTAMP",
+                'token_expires_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN token_expires_at TIMESTAMP",
+                'bound_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN bound_at TIMESTAMP",
+                'last_seen_at': "ALTER TABLE desktop_auth_sessions ADD COLUMN last_seen_at TIMESTAMP",
+            }
+            for column_name, statement in desktop_columns.items():
+                if column_name not in das_cols:
+                    cursor.execute(statement)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_code ON desktop_auth_sessions(code)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_token ON desktop_auth_sessions(access_token)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_desktop_auth_user ON desktop_auth_sessions(telegram_user_id)")
             conn.commit()
         except sqlite3.Error as e:
             logging.error(f"Не удалось подготовить таблицу instant_access_orders: {e}")
@@ -1898,6 +1954,190 @@ def bind_instant_access_code(code: str, user_id: int) -> dict:
     except sqlite3.Error as e:
         logging.error(f"Не удалось привязать instant_access_orders код {code_s} к пользователю {user_id_int}: {e}")
         return {"status": "error"}
+
+def create_desktop_auth_session(
+    *,
+    session_id: str,
+    code: str,
+    access_token: str,
+    code_expires_at: datetime,
+    token_expires_at: datetime,
+    client_name: str | None = None,
+) -> bool:
+    session_id_s = (session_id or "").strip()
+    code_s = (code or "").strip().upper()
+    access_token_s = (access_token or "").strip()
+    if not session_id_s or not code_s or not access_token_s:
+        return False
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO desktop_auth_sessions (
+                    session_id, code, access_token, status, client_name, code_expires_at, token_expires_at
+                ) VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    session_id_s,
+                    code_s,
+                    access_token_s,
+                    (client_name or "").strip() or None,
+                    code_expires_at.isoformat(),
+                    token_expires_at.isoformat(),
+                ),
+            )
+            conn.commit()
+            return True
+    except sqlite3.IntegrityError as e:
+        logging.warning(f"Не удалось создать desktop_auth_sessions запись для code={code_s}: {e}")
+        return False
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось создать desktop_auth_sessions запись для code={code_s}: {e}")
+        return False
+
+def get_desktop_auth_session_by_session_id(session_id: str) -> dict | None:
+    session_id_s = (session_id or "").strip()
+    if not session_id_s:
+        return None
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM desktop_auth_sessions WHERE session_id = ? LIMIT 1", (session_id_s,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить desktop_auth_sessions по session_id={session_id_s}: {e}")
+        return None
+
+def get_desktop_auth_session_by_access_token(access_token: str) -> dict | None:
+    access_token_s = (access_token or "").strip()
+    if not access_token_s:
+        return None
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM desktop_auth_sessions WHERE access_token = ? LIMIT 1", (access_token_s,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось получить desktop_auth_sessions по token: {e}")
+        return None
+
+def bind_desktop_auth_code(code: str, user_id: int) -> dict:
+    code_s = (code or "").strip().upper()
+    try:
+        user_id_int = int(user_id)
+    except Exception:
+        return {"status": "invalid_user"}
+    if not code_s:
+        return {"status": "invalid_code"}
+    try:
+        now = datetime.utcnow()
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM desktop_auth_sessions WHERE UPPER(code) = UPPER(?) LIMIT 1", (code_s,))
+            row = cursor.fetchone()
+            if not row:
+                return {"status": "missing"}
+            session_data = dict(row)
+
+            status = str(session_data.get("status") or "pending").strip().lower()
+            code_expires_at_raw = str(session_data.get("code_expires_at") or "").strip()
+            token_expires_at_raw = str(session_data.get("token_expires_at") or "").strip()
+            try:
+                code_expires_at = datetime.fromisoformat(code_expires_at_raw)
+            except Exception:
+                code_expires_at = now
+            try:
+                token_expires_at = datetime.fromisoformat(token_expires_at_raw)
+            except Exception:
+                token_expires_at = now
+
+            if code_expires_at <= now:
+                cursor.execute(
+                    """
+                    UPDATE desktop_auth_sessions
+                    SET status = 'expired',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = ?
+                    """,
+                    (session_data["session_id"],),
+                )
+                conn.commit()
+                session_data["status"] = "expired"
+                return {"status": "expired", "session": session_data}
+
+            if token_expires_at <= now:
+                cursor.execute(
+                    """
+                    UPDATE desktop_auth_sessions
+                    SET status = 'expired',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = ?
+                    """,
+                    (session_data["session_id"],),
+                )
+                conn.commit()
+                session_data["status"] = "expired"
+                return {"status": "expired", "session": session_data}
+
+            current_user_id = session_data.get("telegram_user_id")
+            try:
+                current_user_id = int(current_user_id) if current_user_id is not None else None
+            except Exception:
+                current_user_id = None
+
+            if current_user_id and current_user_id != user_id_int:
+                return {"status": "conflict", "session": session_data}
+
+            if status == "bound" and current_user_id == user_id_int:
+                return {"status": "already_bound", "session": session_data}
+
+            cursor.execute(
+                """
+                UPDATE desktop_auth_sessions
+                SET status = 'bound',
+                    telegram_user_id = ?,
+                    bound_at = COALESCE(bound_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_seen_at = CURRENT_TIMESTAMP
+                WHERE session_id = ?
+                """,
+                (user_id_int, session_data["session_id"]),
+            )
+            conn.commit()
+            cursor.execute("SELECT * FROM desktop_auth_sessions WHERE session_id = ? LIMIT 1", (session_data["session_id"],))
+            updated_row = cursor.fetchone()
+            return {"status": "bound", "session": dict(updated_row) if updated_row else session_data}
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось привязать desktop_auth_sessions код {code_s} к пользователю {user_id_int}: {e}")
+        return {"status": "error"}
+
+def touch_desktop_auth_session(access_token: str) -> bool:
+    access_token_s = (access_token or "").strip()
+    if not access_token_s:
+        return False
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE desktop_auth_sessions
+                SET last_seen_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE access_token = ?
+                """,
+                (access_token_s,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        logging.error(f"Не удалось обновить last_seen для desktop_auth_sessions token: {e}")
+        return False
 
 def insert_host_speedtest(
     host_name: str,

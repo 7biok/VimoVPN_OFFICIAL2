@@ -48,7 +48,9 @@ from shop_bot.data_manager.database import (
     get_user, get_key_by_email, get_host, find_and_complete_pending_transaction,
     create_instant_access_order, set_instant_access_payment_context,
     mark_instant_access_paid, mark_instant_access_ready, mark_instant_access_failed,
-    get_instant_access_order_by_payment_id)
+    get_instant_access_order_by_payment_id, create_desktop_auth_session,
+    get_desktop_auth_session_by_session_id, get_desktop_auth_session_by_access_token,
+    touch_desktop_auth_session)
 
 
 _bot_controller = None
@@ -340,6 +342,170 @@ def create_webhook_app(bot_controller_instance):
             "bind_url": bind_url,
             "last_error": order.get("last_error"),
         }
+
+    def _parse_db_datetime(value) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        for candidate in (text, text.replace("Z", "+00:00")):
+            try:
+                return datetime.fromisoformat(candidate)
+            except Exception:
+                continue
+        return None
+
+    def _desktop_login_url(code: str) -> str | None:
+        bot_username = _public_bot_username()
+        code_s = str(code or "").strip().upper()
+        if not bot_username or not code_s:
+            return None
+        return f"https://t.me/{bot_username}?start=login_{code_s}"
+
+    def _extract_ping_target(server_url: str | None, connection_string: str | None) -> str | None:
+        for raw in (connection_string, server_url):
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            try:
+                parsed = urllib.parse.urlparse(text)
+                if parsed.hostname:
+                    return parsed.hostname
+                if "@" in text and "://" in text:
+                    after_scheme = text.split("://", 1)[1]
+                    host_part = after_scheme.split("@", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+                    host_only = host_part.split(":", 1)[0].strip()
+                    if host_only:
+                        return host_only
+            except Exception:
+                continue
+        return None
+
+    def _local_key_expiry_ms(key_data: dict | None) -> int | None:
+        if not key_data:
+            return None
+        return _to_timestamp_ms(key_data.get("expiry_date"))
+
+    async def _build_desktop_profile_payload(user_id: int) -> dict | None:
+        user = get_user(user_id)
+        if not user:
+            return None
+
+        keys = get_user_keys(user_id) or []
+
+        async def build_key_payload(key: dict) -> dict:
+            runtime_state = await xui_api.get_key_runtime_state(key)
+            expiry_ms = None
+            connection_string = None
+            server_url = None
+            used_bytes = None
+            limit_bytes = None
+            is_enabled = True
+            status = "unknown"
+            panel_type = None
+
+            if runtime_state:
+                expiry_ms = runtime_state.get("expiry_timestamp_ms")
+                connection_string = runtime_state.get("connection_string")
+                server_url = runtime_state.get("server_url")
+                used_bytes = runtime_state.get("used_bytes")
+                limit_bytes = runtime_state.get("limit_bytes")
+                is_enabled = bool(runtime_state.get("is_enabled", True))
+                status = str(runtime_state.get("status") or "unknown").strip().lower() or "unknown"
+                panel_type = runtime_state.get("panel_type")
+            else:
+                details = await xui_api.get_key_details_from_host(key)
+                connection_string = (details or {}).get("connection_string")
+
+            if expiry_ms is None:
+                expiry_ms = _local_key_expiry_ms(key)
+
+            ping_target = _extract_ping_target(server_url, connection_string)
+            now_ms = int(time.time() * 1000)
+            is_expired = expiry_ms is not None and expiry_ms <= now_ms
+
+            return {
+                "key_id": key.get("key_id"),
+                "host_name": key.get("host_name"),
+                "key_email": key.get("key_email"),
+                "xui_client_uuid": key.get("xui_client_uuid"),
+                "created_at": str(key.get("created_date") or "").strip() or None,
+                "expires_at": _format_expiry_timestamp(expiry_ms),
+                "expiry_timestamp_ms": expiry_ms,
+                "connection_string": connection_string,
+                "server_url": server_url,
+                "ping_target": ping_target,
+                "used_bytes": used_bytes,
+                "limit_bytes": limit_bytes,
+                "is_enabled": bool(is_enabled) and not is_expired,
+                "is_expired": is_expired,
+                "status": "expired" if is_expired else status,
+                "panel_type": panel_type,
+                "can_connect": bool(connection_string) and bool(is_enabled) and not is_expired,
+            }
+
+        key_items = await asyncio.gather(*(build_key_payload(key) for key in keys), return_exceptions=True)
+        serialized_keys: list[dict] = []
+        for item in key_items:
+            if isinstance(item, Exception):
+                logger.warning("Desktop profile: failed to serialize key payload: %s", item)
+                continue
+            serialized_keys.append(item)
+
+        display_name = (
+            str(user.get("username") or "").strip()
+            or str(user.get("full_name") or "").strip()
+            or f"user_{user_id}"
+        )
+        balance = None
+        try:
+            balance = float(get_balance(user_id))
+        except Exception:
+            balance = 0.0
+
+        return {
+            "user": {
+                "telegram_id": int(user_id),
+                "display_name": display_name,
+                "username": str(user.get("username") or "").strip() or None,
+                "balance_rub": balance,
+                "keys_count": len(serialized_keys),
+            },
+            "keys": serialized_keys,
+            "generated_at_timestamp_ms": int(time.time() * 1000),
+        }
+
+    def _get_desktop_authenticated_context() -> tuple[dict | None, dict | None, tuple | None]:
+        auth_header = str(request.headers.get("Authorization") or "").strip()
+        token = ""
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+        if not token:
+            token = str(request.args.get("access_token") or "").strip()
+        if not token:
+            return None, None, (jsonify({"ok": False, "error": "missing_token"}), 401)
+
+        session_data = get_desktop_auth_session_by_access_token(token)
+        if not session_data:
+            return None, None, (jsonify({"ok": False, "error": "invalid_token"}), 401)
+
+        status = str(session_data.get("status") or "pending").strip().lower()
+        token_expires_at = _parse_db_datetime(session_data.get("token_expires_at"))
+        if status != "bound" or not session_data.get("telegram_user_id"):
+            return None, None, (jsonify({"ok": False, "error": "not_bound"}), 401)
+        if token_expires_at and token_expires_at <= datetime.utcnow():
+            return None, None, (jsonify({"ok": False, "error": "token_expired"}), 401)
+
+        try:
+            user_id = int(session_data["telegram_user_id"])
+        except Exception:
+            return None, None, (jsonify({"ok": False, "error": "invalid_user"}), 401)
+
+        user = get_user(user_id)
+        if not user:
+            return None, None, (jsonify({"ok": False, "error": "user_not_found"}), 404)
+
+        touch_desktop_auth_session(token)
+        return session_data, user, None
 
     async def _create_public_yookassa_payment(
         *,
@@ -787,6 +953,117 @@ def create_webhook_app(bot_controller_instance):
         if not order:
             return jsonify({"ok": False, "error": "not_found"}), 404
         return jsonify({"ok": True, "order": _serialize_instant_access_order(order)})
+
+    @flask_app.route('/desktop-app/auth/start', methods=['POST'])
+    def desktop_auth_start():
+        payload = request.get_json(silent=True) or {}
+        client_name = str(payload.get("client_name") or request.form.get("client_name") or "VimoVPN Windows").strip()
+        session_id = ""
+        code = ""
+        access_token = ""
+        code_expires_at = None
+        token_expires_at = None
+
+        for _ in range(10):
+            candidate_session_id = str(uuid.uuid4())
+            candidate_code = _generate_instant_access_code(8)
+            candidate_access_token = secrets.token_urlsafe(32)
+            candidate_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
+            candidate_token_expires_at = datetime.utcnow() + timedelta(days=30)
+            if create_desktop_auth_session(
+                session_id=candidate_session_id,
+                code=candidate_code,
+                access_token=candidate_access_token,
+                code_expires_at=candidate_code_expires_at,
+                token_expires_at=candidate_token_expires_at,
+                client_name=client_name,
+            ):
+                session_id = candidate_session_id
+                code = candidate_code
+                access_token = candidate_access_token
+                code_expires_at = candidate_code_expires_at
+                token_expires_at = candidate_token_expires_at
+                break
+
+        if not session_id or not code or not access_token or not code_expires_at or not token_expires_at:
+            return jsonify({"ok": False, "error": "session_create_failed"}), 500
+
+        bot_url = _desktop_login_url(code)
+        if not bot_url:
+            return jsonify({"ok": False, "error": "telegram_bot_username_missing"}), 500
+
+        return jsonify({
+            "ok": True,
+            "session": {
+                "session_id": session_id,
+                "code": code,
+                "display_code": f"#{code}",
+                "bot_url": bot_url,
+                "status_url": f"{_public_base_url()}{url_for('desktop_auth_status', session_id=session_id)}",
+                "code_expires_at_timestamp_ms": int(code_expires_at.timestamp() * 1000),
+                "token_expires_at_timestamp_ms": int(token_expires_at.timestamp() * 1000),
+            }
+        })
+
+    @flask_app.route('/desktop-app/auth/status/<session_id>')
+    def desktop_auth_status(session_id: str):
+        session_data = get_desktop_auth_session_by_session_id(session_id)
+        if not session_data:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+
+        now = datetime.utcnow()
+        code_expires_at = _parse_db_datetime(session_data.get("code_expires_at"))
+        token_expires_at = _parse_db_datetime(session_data.get("token_expires_at"))
+        status = str(session_data.get("status") or "pending").strip().lower() or "pending"
+        if status == "pending" and code_expires_at and code_expires_at <= now:
+            status = "expired"
+        if status == "bound" and token_expires_at and token_expires_at <= now:
+            status = "expired"
+
+        payload = {
+            "ok": True,
+            "status": status,
+            "code": session_data.get("code"),
+            "display_code": f"#{session_data['code']}" if session_data.get("code") else None,
+            "bot_url": _desktop_login_url(str(session_data.get("code") or "")),
+            "code_expires_at_timestamp_ms": int(code_expires_at.timestamp() * 1000) if code_expires_at else None,
+            "token_expires_at_timestamp_ms": int(token_expires_at.timestamp() * 1000) if token_expires_at else None,
+        }
+        if status == "bound":
+            payload["access_token"] = session_data.get("access_token")
+            try:
+                user_id = int(session_data.get("telegram_user_id"))
+            except Exception:
+                user_id = None
+            user = get_user(user_id) if user_id else None
+            if user:
+                payload["user"] = {
+                    "telegram_id": user_id,
+                    "display_name": str(user.get("username") or "").strip() or f"user_{user_id}",
+                }
+        return jsonify(payload)
+
+    @flask_app.route('/desktop-app/me')
+    def desktop_me():
+        session_data, user, error_response = _get_desktop_authenticated_context()
+        if error_response:
+            return error_response
+        try:
+            payload = asyncio.run(_build_desktop_profile_payload(int(user["telegram_id"])))
+        except Exception as exc:
+            logger.error("Desktop profile build failed for user %s: %s", user.get("telegram_id"), exc, exc_info=True)
+            return jsonify({"ok": False, "error": "profile_build_failed"}), 500
+        if not payload:
+            return jsonify({"ok": False, "error": "user_not_found"}), 404
+
+        payload["session"] = {
+            "client_name": session_data.get("client_name"),
+            "token_expires_at_timestamp_ms": (
+                int(_parse_db_datetime(session_data.get("token_expires_at")).timestamp() * 1000)
+                if _parse_db_datetime(session_data.get("token_expires_at")) else None
+            ),
+        }
+        return jsonify({"ok": True, **payload})
 
     @flask_app.route('/dashboard')
     @login_required

@@ -53,6 +53,7 @@ from shop_bot.data_manager.database import (
     find_and_complete_pending_transaction,
     get_transaction_status,
     bind_instant_access_code,
+    bind_desktop_auth_code,
     get_instant_access_order_by_key_id,
     mark_instant_access_upgraded,
     check_promo_code_available,
@@ -279,11 +280,14 @@ def get_user_router() -> Router:
         username = message.from_user.username or message.from_user.full_name
         referrer_id = None
         temp_access_code = None
+        desktop_login_code = None
 
         if command.args:
             start_args = (command.args or "").strip()
             if start_args.startswith('temp_'):
                 temp_access_code = re.sub(r'[^A-Z0-9]', '', start_args[len('temp_'):].upper())[:32] or None
+            elif start_args.startswith('login_'):
+                desktop_login_code = re.sub(r'[^A-Z0-9]', '', start_args[len('login_'):].upper())[:32] or None
             elif start_args.startswith('ref_'):
                 try:
                     potential_referrer_id = int(start_args.split('_')[1])
@@ -330,6 +334,33 @@ def get_user_router() -> Router:
             else:
                 start_notice_text = (
                     f"❌ Не удалось привязать код <b>#{temp_access_code}</b>. Попробуйте позже."
+                )
+        elif desktop_login_code:
+            bind_result = bind_desktop_auth_code(desktop_login_code, user_id)
+            bind_status = bind_result.get("status")
+            if bind_status == "bound":
+                start_notice_text = (
+                    f"✅ Вход для Windows-клиента подтверждён.\n"
+                    f"Код <b>#{desktop_login_code}</b> привязан к вашему Telegram-профилю."
+                )
+            elif bind_status == "already_bound":
+                start_notice_text = (
+                    f"ℹ️ Код <b>#{desktop_login_code}</b> уже был подтверждён для вашего профиля."
+                )
+            elif bind_status == "expired":
+                start_notice_text = (
+                    f"⌛ Код <b>#{desktop_login_code}</b> уже истёк.\n"
+                    "Откройте приложение и запросите новый код входа."
+                )
+            elif bind_status == "conflict":
+                start_notice_text = (
+                    f"❌ Код <b>#{desktop_login_code}</b> уже привязан к другому Telegram-профилю."
+                )
+            elif bind_status == "missing":
+                start_notice_text = f"❌ Код <b>#{desktop_login_code}</b> не найден."
+            else:
+                start_notice_text = (
+                    f"❌ Не удалось подтвердить вход по коду <b>#{desktop_login_code}</b>."
                 )
 
         if start_notice_text:
