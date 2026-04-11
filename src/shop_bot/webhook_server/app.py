@@ -955,6 +955,7 @@ def create_webhook_app(bot_controller_instance):
         return jsonify({"ok": True, "order": _serialize_instant_access_order(order)})
 
     @flask_app.route('/desktop-app/auth/start', methods=['POST'])
+    @csrf.exempt
     def desktop_auth_start():
         try:
             payload = request.get_json(silent=True) or {}
