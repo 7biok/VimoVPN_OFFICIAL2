@@ -35,7 +35,9 @@
 
           <nav class="admin-topnav">
             <a href="{{ url_for('dashboard_page') }}" class="admin-topnav__link {% if request.endpoint == 'dashboard_page' %}is-active{% endif %}">Обзор</a>
+            {% if route_exists('analytics_page') %}
             <a href="{{ url_for('analytics_page') }}" class="admin-topnav__link {% if request.endpoint == 'analytics_page' %}is-active{% endif %}">Аналитика</a>
+            {% endif %}
             <a href="{{ url_for('users_page') }}" class="admin-topnav__link {% if request.endpoint == 'users_page' %}is-active{% endif %}">Пользователи</a>
             <a href="{{ url_for('admin_keys_page') }}" class="admin-topnav__link {% if request.endpoint == 'admin_keys_page' %}is-active{% endif %}">Ключи</a>
             <a href="{{ url_for('support_list_page') }}" class="admin-topnav__link {% if request.endpoint in ['support_list_page', 'support_ticket_page'] %}is-active{% endif %}">Поддержка</a>
@@ -120,9 +122,11 @@
               <a href="{{ url_for('monitor_page') }}" class="admin-sidebar__link {% if request.endpoint == 'monitor_page' %}is-active{% endif %}">
                 <i class="ti ti-activity-heartbeat"></i><span>Монитор</span>
               </a>
+              {% if route_exists('analytics_page') %}
               <a href="{{ url_for('analytics_page') }}" class="admin-sidebar__link {% if request.endpoint == 'analytics_page' %}is-active{% endif %}">
                 <i class="ti ti-chart-dots-3"></i><span>Аналитика</span>
               </a>
+              {% endif %}
               <a href="{{ url_for('button_constructor_page') }}" class="admin-sidebar__link {% if request.endpoint == 'button_constructor_page' %}is-active{% endif %}">
                 <i class="ti ti-app-window"></i><span>Конструктор</span>
               </a>

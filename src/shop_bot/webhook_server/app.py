@@ -17,6 +17,7 @@ from aiosend import CryptoPay
 from yookassa import Payment
 from flask import Flask, request, render_template, redirect, url_for, flash, session, current_app, jsonify, send_file
 from flask_wtf.csrf import CSRFProtect, generate_csrf
+from werkzeug.routing import BuildError
 import secrets
 import urllib.parse
 import urllib.request
@@ -173,10 +174,16 @@ def create_webhook_app(bot_controller_instance):
 
     @flask_app.context_processor
     def inject_current_year():
+        def route_exists(endpoint_name: str) -> bool:
+            try:
+                return flask_app.view_functions.get(str(endpoint_name or "").strip()) is not None
+            except Exception:
+                return False
         # Добавляем csrf_token в шаблоны для meta и скрытых полей
         return {
             'current_year': datetime.utcnow().year,
-            'csrf_token': generate_csrf
+            'csrf_token': generate_csrf,
+            'route_exists': route_exists,
         }
 
     def login_required(f):
@@ -419,7 +426,10 @@ def create_webhook_app(bot_controller_instance):
                 logger.warning("Failed to read desktop update manifest: %s", exc)
         download_url = str(manifest.get("download_url") or "").strip()
         if not download_url and _find_latest_desktop_client_package():
-            download_url = url_for("desktop_client_download_latest")
+            try:
+                download_url = url_for("desktop_client_download_latest")
+            except BuildError:
+                download_url = ""
         if download_url.startswith("/"):
             manifest["download_url"] = f"{_public_base_url()}{download_url}"
         else:
@@ -1205,10 +1215,49 @@ def create_webhook_app(bot_controller_instance):
             "server_time_timestamp_ms": int(time.time() * 1000),
         })
 
+    def _empty_analytics_snapshot(days: int = 30) -> dict:
+        days_int = max(1, int(days or 30))
+        return {
+            "summary": {
+                "total_users": 0,
+                "total_keys": 0,
+                "active_keys": 0,
+                "total_income": 0.0,
+                "today_new_users": 0,
+                "today_income": 0.0,
+                "today_issued_keys": 0,
+                "host_count": 0,
+                "desktop_devices": 0,
+                "desktop_online_devices": 0,
+                "desktop_connected_devices": 0,
+                "desktop_total_connections": 0,
+            },
+            "days": days_int,
+            "generated_at_timestamp_ms": int(time.time() * 1000),
+            "daily": {
+                "activity": {"users": {}, "keys": {}},
+                "revenue": {},
+            },
+            "payment_methods": [],
+            "panel_breakdown": [],
+            "os_breakdown": [],
+            "top_users": [],
+            "devices": {
+                "summary": {
+                    "total_devices": 0,
+                    "online_devices": 0,
+                    "connected_devices": 0,
+                    "total_connections": 0,
+                },
+                "recent": [],
+            },
+            "hosts": [],
+        }
+
     def _build_analytics_snapshot(days: int = 30) -> dict:
         days_int = max(1, int(days or 30))
         hosts = get_all_hosts() or []
-        summary = get_admin_stats() or {}
+        summary = database.get_admin_stats() or {}
         device_summary = database.get_desktop_device_summary()
         summary.update({
             "host_count": len(hosts),
@@ -1332,7 +1381,12 @@ def create_webhook_app(bot_controller_instance):
     @login_required
     def analytics_page():
         common_data = get_common_template_data()
-        analytics = _build_analytics_snapshot(days=request.args.get('days', 30, type=int))
+        try:
+            analytics = _build_analytics_snapshot(days=request.args.get('days', 30, type=int))
+        except Exception as exc:
+            logger.error("Analytics page failed to build snapshot: %s", exc, exc_info=True)
+            flash('Не удалось полностью собрать аналитику. Показаны безопасные значения по умолчанию.', 'warning')
+            analytics = _empty_analytics_snapshot(days=request.args.get('days', 30, type=int))
         common_data.update({
             "analytics": analytics,
         })
@@ -1341,9 +1395,14 @@ def create_webhook_app(bot_controller_instance):
     @flask_app.route('/analytics/overview.json')
     @login_required
     def analytics_overview_json():
+        try:
+            analytics = _build_analytics_snapshot(days=request.args.get('days', 30, type=int))
+        except Exception as exc:
+            logger.error("Analytics overview JSON failed: %s", exc, exc_info=True)
+            analytics = _empty_analytics_snapshot(days=request.args.get('days', 30, type=int))
         return jsonify({
             "ok": True,
-            "analytics": _build_analytics_snapshot(days=request.args.get('days', 30, type=int)),
+            "analytics": analytics,
         })
 
     # --- Resource Monitor ---
