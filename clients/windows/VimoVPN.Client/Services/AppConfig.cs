@@ -7,6 +7,7 @@ public sealed class AppConfig
 {
     public string ApiBaseUrl { get; set; } = "https://vimovpn.icu";
     public string ClientName { get; set; } = "VimoVPN Windows";
+    public string PublicTelegramUrl { get; set; } = "https://t.me/vimovpn";
     public string SingboxRelativePath { get; set; } = @"runtime\sing-box.exe";
     public int AuthPollIntervalSeconds { get; set; } = 2;
     public int ProfileRefreshIntervalSeconds { get; set; } = 20;

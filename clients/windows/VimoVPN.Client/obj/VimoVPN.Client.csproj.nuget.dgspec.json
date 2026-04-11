@@ -10,7 +10,7 @@
         "projectUniqueName": "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\clients\\windows\\VimoVPN.Client\\VimoVPN.Client.csproj",
         "projectName": "VimoVPN.Client",
         "projectPath": "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\clients\\windows\\VimoVPN.Client\\VimoVPN.Client.csproj",
-        "packagesPath": "c:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\.dotnet-home\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\.dotnet-home\\.nuget\\packages\\",
         "outputPath": "C:\\Users\\7biok\\Desktop\\VimoVPN_PROD\\VimoVPN_OFFICIAL2\\clients\\windows\\VimoVPN.Client\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
@@ -353,6 +353,11 @@
             "System.Xml.XPath": "(,4.3.32767]",
             "System.Xml.XPath.XDocument": "(,5.0.32767]"
           }
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
         }
       }
     }

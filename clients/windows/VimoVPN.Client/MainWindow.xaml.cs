@@ -24,15 +24,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _accessToken;
     private bool _isAuthenticated;
     private bool _isBusy;
-    private string _loginCodeDisplay = "--------";
-    private string _authStatusText = "Request a code to start Telegram authorization.";
-    private string _userDisplayName = "Not authorized";
-    private string _profileMetaText = "Waiting for login";
-    private string _trafficSummaryText = "Traffic will appear after loading active keys.";
-    private string _connectionStatusText = "Disconnected";
-    private string _selectedServerName = "No active tunnel";
-    private string _selectedServerDetails = "The client will select the best endpoint after ping check.";
+    private string _loginCodeDisplay = "#--------";
+    private string _authStatusText = "Вход через Telegram";
+    private string _userDisplayName = "VimoVPN";
+    private string _profileMetaText = "Ожидание входа";
+    private string _trafficSummaryText = "Трафик появится после загрузки ключей.";
+    private string _connectionStatusText = "Ожидание входа";
+    private string _selectedServerName = "Маршрут не выбран";
+    private string _selectedServerDetails = "Лучший сервер будет выбран автоматически.";
     private string _apiBaseUrl;
+    private string _telegramHandleText;
     private ObservableCollection<ServerCardModel> _serverCards = [];
 
     public MainWindow()
@@ -49,6 +50,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _profileRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Math.Max(10, _config.ProfileRefreshIntervalSeconds)) };
         _profileRefreshTimer.Tick += ProfileRefreshTimer_Tick;
         _apiBaseUrl = _config.ApiBaseUrl;
+        _telegramHandleText = BuildTelegramHandleText(_config.PublicTelegramUrl);
 
         DataContext = this;
     }
@@ -59,6 +61,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get => _apiBaseUrl;
         set => SetField(ref _apiBaseUrl, value);
+    }
+
+    public string TelegramHandleText
+    {
+        get => _telegramHandleText;
+        set => SetField(ref _telegramHandleText, value);
     }
 
     public bool IsAuthenticated
@@ -126,6 +134,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _accessToken = _authStorage.LoadAccessToken();
         if (!string.IsNullOrWhiteSpace(_accessToken))
         {
+            AuthStatusText = "Восстанавливаю сессию…";
             await LoadProfileAsync(true);
         }
     }
@@ -146,42 +155,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (TryOpenPendingTelegramSession())
+        {
+            return;
+        }
+
         try
         {
             _isBusy = true;
-            AuthStatusText = "Requesting a login code from VimoVPN backend...";
+            AuthStatusText = "Создаю код входа…";
             var response = await _apiClient.StartAuthSessionAsync(_config.ClientName, CancellationToken.None);
             if (!response.Ok || response.Session is null || string.IsNullOrWhiteSpace(response.Session.SessionId))
             {
-                AuthStatusText = $"Failed to request code: {response.Error ?? "unknown_error"}";
+                AuthStatusText = $"Не удалось создать код: {response.Error ?? "unknown_error"}";
                 return;
             }
 
             _currentSession = response.Session;
-            LoginCodeDisplay = response.Session.DisplayCode ?? response.Session.Code ?? "--------";
-            AuthStatusText = "Open Telegram and confirm the login in the bot. The app is polling for authorization.";
+            LoginCodeDisplay = response.Session.DisplayCode ?? BuildDisplayCode(response.Session.Code);
+            ConnectionStatusText = "Ожидание подтверждения";
+            _authPollTimer.Stop();
             _authPollTimer.Start();
+            OpenTelegramForCurrentSession();
         }
         catch (Exception exc)
         {
-            AuthStatusText = $"Auth session request failed: {exc.Message}";
+            AuthStatusText = $"Ошибка авторизации: {exc.Message}";
         }
         finally
         {
             _isBusy = false;
         }
-    }
-
-    private void OpenTelegram_Click(object sender, RoutedEventArgs e)
-    {
-        var url = _currentSession?.BotUrl;
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            AuthStatusText = "Request a code first, then open Telegram.";
-            return;
-        }
-
-        OpenExternal(url);
     }
 
     private async void AuthPollTimer_Tick(object? sender, EventArgs e)
@@ -197,17 +201,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var status = await _apiClient.GetAuthStatusAsync(_currentSession.SessionId!, CancellationToken.None);
             if (!status.Ok)
             {
-                AuthStatusText = $"Authorization polling failed: {status.Error ?? "unknown_error"}";
+                AuthStatusText = $"Ошибка проверки входа: {status.Error ?? "unknown_error"}";
                 return;
             }
 
             var state = (status.Status ?? "pending").Trim().ToLowerInvariant();
             AuthStatusText = state switch
             {
-                "bound" => "Login confirmed. Loading profile...",
-                "expired" => "The login code expired. Request a new one.",
-                "pending" => "Waiting for confirmation in Telegram...",
-                _ => $"Current state: {state}",
+                "bound" => "Вход подтверждён",
+                "expired" => "Код истёк",
+                "pending" => "Ожидание подтверждения в Telegram",
+                _ => $"Статус: {state}",
             };
 
             if (state == "bound" && !string.IsNullOrWhiteSpace(status.AccessToken))
@@ -215,16 +219,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _authPollTimer.Stop();
                 _accessToken = status.AccessToken;
                 _authStorage.SaveAccessToken(status.AccessToken);
+                ConnectionStatusText = "Готов к подключению";
                 await LoadProfileAsync(false);
             }
             else if (state == "expired")
             {
                 _authPollTimer.Stop();
+                ConnectionStatusText = "Код истёк";
             }
         }
         catch (Exception exc)
         {
-            AuthStatusText = $"Authorization polling error: {exc.Message}";
+            AuthStatusText = $"Ошибка проверки: {exc.Message}";
         }
         finally
         {
@@ -250,7 +256,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var connectable = ServerCards.Where(card => card.Key.CanConnect).Select(card => card.Key).ToList();
         if (connectable.Count == 0)
         {
-            ConnectionStatusText = "No active subscriptions are ready for connection.";
+            ConnectionStatusText = "Нет активных ключей для подключения";
             return;
         }
 
@@ -268,9 +274,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void Disconnect_Click(object sender, RoutedEventArgs e)
     {
         await _vpnEngine.DisconnectAsync();
-        ConnectionStatusText = "Disconnected";
-        SelectedServerName = "No active tunnel";
-        SelectedServerDetails = "The tunnel was stopped and routes were released.";
+        ConnectionStatusText = "Отключено";
+        SelectedServerName = "Маршрут не выбран";
+        SelectedServerDetails = "Туннель остановлен.";
     }
 
     private async void ResetLogin_Click(object sender, RoutedEventArgs e)
@@ -282,14 +288,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _accessToken = null;
         _currentSession = null;
         IsAuthenticated = false;
-        LoginCodeDisplay = "--------";
-        AuthStatusText = "Request a code to start Telegram authorization.";
-        UserDisplayName = "Not authorized";
-        ProfileMetaText = "Waiting for login";
-        TrafficSummaryText = "Traffic will appear after loading active keys.";
-        ConnectionStatusText = "Disconnected";
-        SelectedServerName = "No active tunnel";
-        SelectedServerDetails = "The client will select the best endpoint after ping check.";
+        LoginCodeDisplay = "#--------";
+        AuthStatusText = "Вход через Telegram";
+        UserDisplayName = "VimoVPN";
+        ProfileMetaText = "Ожидание входа";
+        TrafficSummaryText = "Трафик появится после загрузки ключей.";
+        ConnectionStatusText = "Ожидание входа";
+        SelectedServerName = "Маршрут не выбран";
+        SelectedServerDetails = "Лучший сервер будет выбран автоматически.";
         ServerCards = [];
     }
 
@@ -308,7 +314,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (!silentFailure)
                 {
-                    ConnectionStatusText = $"Profile loading failed: {response.Error ?? "unknown_error"}";
+                    ConnectionStatusText = $"Ошибка профиля: {response.Error ?? "unknown_error"}";
                 }
                 if (response.Error is "invalid_token" or "token_expired" or "not_bound")
                 {
@@ -320,16 +326,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             IsAuthenticated = true;
             _profileRefreshTimer.Start();
             UserDisplayName = response.User.DisplayName ?? $"user_{response.User.TelegramId}";
-            ProfileMetaText = $"Telegram ID {response.User.TelegramId}  |  Balance {response.User.BalanceRub:0.00} RUB  |  Keys {response.User.KeysCount}";
+            ProfileMetaText = BuildProfileMetaText(response.User);
             ServerCards = new ObservableCollection<ServerCardModel>(response.Keys.Select(BuildServerCard));
             TrafficSummaryText = BuildTrafficSummary(response.Keys);
-            ConnectionStatusText = _vpnEngine.IsRunning ? ConnectionStatusText : "Disconnected";
+            ConnectionStatusText = _vpnEngine.IsRunning ? ConnectionStatusText : "Готов к подключению";
+            AuthStatusText = "Вход выполнен";
         }
         catch (Exception exc)
         {
             if (!silentFailure)
             {
-                ConnectionStatusText = $"Profile loading error: {exc.Message}";
+                ConnectionStatusText = $"Ошибка загрузки: {exc.Message}";
             }
         }
         finally
@@ -348,7 +355,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             _isBusy = true;
-            ConnectionStatusText = "Resolving subscription endpoints...";
+            ConnectionStatusText = "Получаю доступные узлы…";
             var candidates = new List<ResolvedServerOption>();
 
             foreach (var key in sourceKeys.Where(item => item.CanConnect && !string.IsNullOrWhiteSpace(item.ConnectionString)))
@@ -366,36 +373,89 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (candidates.Count == 0)
             {
-                ConnectionStatusText = "No supported endpoints were found in the selected subscriptions.";
+                ConnectionStatusText = "Нет поддерживаемых адресов в подписке";
                 return;
             }
 
-            ConnectionStatusText = "Measuring ping to available endpoints...";
+            ConnectionStatusText = "Проверяю ping…";
             await Task.WhenAll(candidates.Select(async candidate => candidate.PingMs = await PingEndpointAsync(candidate.Endpoint.Server)));
             UpdateServerPings(candidates);
 
             var best = candidates.Where(item => item.PingMs.HasValue).OrderBy(item => item.PingMs!.Value).FirstOrDefault() ?? candidates.First();
-            ConnectionStatusText = $"Starting tunnel via {best.Endpoint.DisplayName}...";
+            ConnectionStatusText = $"Подключаю {best.Endpoint.DisplayName}…";
             var singboxPath = _config.ResolveSingboxPath(AppContext.BaseDirectory);
             var result = await _vpnEngine.ConnectAsync(best.Endpoint, singboxPath, CancellationToken.None);
             if (!result.Success)
             {
-                ConnectionStatusText = $"Tunnel start failed: {result.Message}";
+                ConnectionStatusText = $"Ошибка запуска: {result.Message}";
                 return;
             }
 
-            SelectedServerName = $"{best.SourceKey.HostName} -> {best.Endpoint.DisplayName}";
-            SelectedServerDetails = $"Best ping: {(best.PingMs.HasValue ? $"{best.PingMs.Value} ms" : "n/a")}  |  Protocol: {best.Endpoint.Protocol}";
-            ConnectionStatusText = result.Message;
+            SelectedServerName = $"{best.SourceKey.HostName} · {best.Endpoint.DisplayName}";
+            SelectedServerDetails = $"Ping {(best.PingMs.HasValue ? $"{best.PingMs.Value} мс" : "н/д")} · {best.Endpoint.Protocol}";
+            ConnectionStatusText = "Подключено";
         }
         catch (Exception exc)
         {
-            ConnectionStatusText = $"Connection failed: {exc.Message}";
+            ConnectionStatusText = $"Ошибка подключения: {exc.Message}";
         }
         finally
         {
             _isBusy = false;
         }
+    }
+
+    private bool TryOpenPendingTelegramSession()
+    {
+        if (IsAuthenticated || _currentSession is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_currentSession.Code))
+        {
+            return false;
+        }
+
+        if (_currentSession.CodeExpiresAtTimestampMs is long expiresAtTimestampMs &&
+            expiresAtTimestampMs <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+        {
+            return false;
+        }
+
+        if (!_authPollTimer.IsEnabled)
+        {
+            _authPollTimer.Start();
+        }
+
+        OpenTelegramForCurrentSession();
+        return true;
+    }
+
+    private void OpenTelegramForCurrentSession()
+    {
+        var code = _currentSession?.Code;
+        var authUrl = BuildTelegramAuthUrl(_config.PublicTelegramUrl, _currentSession?.BotUrl, code);
+        if (string.IsNullOrWhiteSpace(authUrl))
+        {
+            AuthStatusText = "Не удалось сформировать ссылку Telegram";
+            return;
+        }
+
+        var loginCommand = BuildLoginCommand(code);
+        var copied = TryCopyToClipboard(loginCommand);
+        try
+        {
+            OpenExternal(authUrl);
+        }
+        catch (Exception exc)
+        {
+            AuthStatusText = $"Не удалось открыть Telegram: {exc.Message}";
+            return;
+        }
+        AuthStatusText = copied
+            ? $"Открыт {TelegramHandleText}. Команда {loginCommand} скопирована."
+            : $"Открыт {TelegramHandleText}.";
     }
 
     private void UpdateServerPings(IEnumerable<ResolvedServerOption> candidates)
@@ -408,11 +468,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (bestByKey.TryGetValue(card.Key.KeyId, out var best) && best?.PingMs is long ping)
             {
-                card.PingText = $"Best endpoint ping: {ping} ms";
+                card.PingText = $"Лучший ping: {ping} мс";
             }
             else
             {
-                card.PingText = "Best endpoint ping: unavailable";
+                card.PingText = "Ping будет проверен при подключении";
             }
             return card;
         }).ToList();
@@ -444,10 +504,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return new ServerCardModel
         {
             Key = key,
-            StatusText = key.IsExpired ? "Expired" : (!key.IsEnabled ? "Disabled on panel" : (key.CanConnect ? $"Ready to connect via {key.PanelType ?? "panel"}" : "No connection string available")),
+            StatusText = key.IsExpired
+                ? "Истёк"
+                : (!key.IsEnabled
+                    ? "Отключён на панели"
+                    : (key.CanConnect ? $"Готов · {key.PanelType ?? "panel"}" : "Нет ссылки подключения")),
             TrafficText = FormatTraffic(key.UsedBytes, key.LimitBytes),
-            PingText = string.IsNullOrWhiteSpace(key.PingTarget) ? "Ping target unavailable" : $"Ping target: {key.PingTarget}",
+            PingText = string.IsNullOrWhiteSpace(key.PingTarget) ? "Ping будет проверен при подключении" : $"Узел: {key.PingTarget}",
         };
+    }
+
+    private static string BuildProfileMetaText(DesktopUserSummaryDto user)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(user.Username))
+        {
+            parts.Add("@" + user.Username.Trim());
+        }
+        parts.Add($"ID {user.TelegramId}");
+        parts.Add($"Ключей {user.KeysCount}");
+        return string.Join(" • ", parts);
     }
 
     private static string BuildTrafficSummary(IEnumerable<DesktopKeyDto> keys)
@@ -456,18 +532,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var limit = keys.Where(item => item.LimitBytes.HasValue).Sum(item => item.LimitBytes ?? 0);
         if (used <= 0 && limit <= 0)
         {
-            return "Traffic: no panel metrics yet";
+            return "Трафик пока не получен";
         }
-        return $"Traffic: {FormatBytes(used)} used of {FormatBytes(limit)}";
+        if (limit <= 0)
+        {
+            return $"Использовано {FormatBytes(used)}";
+        }
+        return $"Использовано {FormatBytes(used)} из {FormatBytes(limit)}";
     }
 
     private static string FormatTraffic(long? usedBytes, long? limitBytes)
     {
         if (usedBytes is null && limitBytes is null)
         {
-            return "Traffic: no data";
+            return "Трафик не получен";
         }
-        return $"Traffic: {FormatBytes(usedBytes ?? 0)} / {FormatBytes(limitBytes ?? 0)}";
+        if ((limitBytes ?? 0) <= 0)
+        {
+            return $"Использовано {FormatBytes(usedBytes ?? 0)}";
+        }
+        return $"{FormatBytes(usedBytes ?? 0)} / {FormatBytes(limitBytes ?? 0)}";
     }
 
     private static string FormatBytes(long value)
@@ -482,6 +566,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             normalized /= 1024;
         }
         return $"{normalized:0.##} {units[order]}";
+    }
+
+    private static string BuildDisplayCode(string? code)
+    {
+        var cleanCode = (code ?? string.Empty).Trim().ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(cleanCode) ? "#--------" : $"#{cleanCode}";
+    }
+
+    private static string BuildLoginCommand(string? code)
+    {
+        var cleanCode = (code ?? string.Empty).Trim().ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(cleanCode) ? "/login=" : $"/login={cleanCode}";
+    }
+
+    private static string BuildTelegramAuthUrl(string? publicTelegramUrl, string? fallbackBotUrl, string? code)
+    {
+        var cleanCode = (code ?? string.Empty).Trim().ToUpperInvariant();
+        var baseUrl = !string.IsNullOrWhiteSpace(publicTelegramUrl)
+            ? publicTelegramUrl!.Trim()
+            : (fallbackBotUrl ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(cleanCode))
+        {
+            return baseUrl;
+        }
+
+        if (baseUrl.Contains("start=", StringComparison.OrdinalIgnoreCase))
+        {
+            return baseUrl;
+        }
+
+        var separator = baseUrl.Contains('?') ? "&" : "?";
+        return $"{baseUrl}{separator}start=login_{Uri.EscapeDataString(cleanCode)}";
+    }
+
+    private static string BuildTelegramHandleText(string? publicTelegramUrl)
+    {
+        var value = (publicTelegramUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "t.me/vimovpn";
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return $"{uri.Host}{uri.AbsolutePath}".TrimEnd('/');
+        }
+
+        return value.Replace("https://", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("http://", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .TrimEnd('/');
+    }
+
+    private static bool TryCopyToClipboard(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void OpenExternal(string url)

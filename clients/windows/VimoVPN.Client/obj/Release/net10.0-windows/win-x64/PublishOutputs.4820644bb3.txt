@@ -1,0 +1,7 @@
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\VimoVPN.Client.exe
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\appsettings.json
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\runtime\README.txt
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\VimoVPN.Client.dll
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\VimoVPN.Client.deps.json
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\VimoVPN.Client.runtimeconfig.json
+C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\513b7267ab9a37d3\dist\windows\VimoVPN.Client-win-x64-20260411-131702\VimoVPN.Client.pdb

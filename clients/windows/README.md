@@ -58,6 +58,29 @@ $env:DOTNET_CLI_HOME="$PWD\\.dotnet-home"
 dotnet build clients\windows\VimoVPN.Client\VimoVPN.Client.csproj -p:RestoreIgnoreFailedSources=true
 ```
 
+## Release-пакет
+
+Скрипт упаковки:
+
+- `clients/windows/build-release.ps1`
+
+Пример:
+
+```powershell
+.\clients\windows\build-release.ps1 -ApiBaseUrl "https://vimovpn.icu"
+```
+
+Результат:
+
+- publish-папка в `dist/windows/...`
+- zip-архив рядом
+
+По умолчанию пакет framework-dependent. Если нужен self-contained publish, используйте:
+
+```powershell
+.\clients\windows\build-release.ps1 -ApiBaseUrl "https://vimovpn.icu" -SelfContained
+```
+
 ## Запуск
 
 1. Запустите backend VimoVPN.

@@ -108,6 +108,21 @@ def is_valid_email(email: str) -> bool:
     pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return re.match(pattern, email) is not None
 
+
+def _normalize_desktop_login_code(raw_value: str | None) -> str | None:
+    normalized = re.sub(r'[^A-Z0-9]', '', str(raw_value or '').upper())[:32]
+    return normalized or None
+
+
+def _extract_desktop_login_code_from_text(text: str | None) -> str | None:
+    raw_text = str(text or '').strip()
+    if not raw_text:
+        return None
+    match = re.match(r'^/login(?:@[\w_]+)?(?:=|_|\s+)([A-Z0-9]+)$', raw_text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return _normalize_desktop_login_code(match.group(1))
+
 async def show_main_menu(message: types.Message, edit_message: bool = False):
     user_id = message.chat.id
     user_db_data = get_user(user_id)
@@ -287,7 +302,9 @@ def get_user_router() -> Router:
             if start_args.startswith('temp_'):
                 temp_access_code = re.sub(r'[^A-Z0-9]', '', start_args[len('temp_'):].upper())[:32] or None
             elif start_args.startswith('login_'):
-                desktop_login_code = re.sub(r'[^A-Z0-9]', '', start_args[len('login_'):].upper())[:32] or None
+                desktop_login_code = _normalize_desktop_login_code(start_args[len('login_'):])
+            elif start_args.startswith('login='):
+                desktop_login_code = _normalize_desktop_login_code(start_args[len('login='):])
             elif start_args.startswith('ref_'):
                 try:
                     potential_referrer_id = int(start_args.split('_')[1])
@@ -456,6 +473,45 @@ def get_user_router() -> Router:
             disable_web_page_preview=True
         )
         await state.set_state(Onboarding.waiting_for_subscription_and_agreement)
+
+    @user_router.message(StateFilter(None), F.text.regexp(r'^/login(?:@[\w_]+)?(?:=|_|\s+)[A-Za-z0-9]+$'))
+    async def desktop_login_command_handler(message: types.Message):
+        desktop_login_code = _extract_desktop_login_code_from_text(message.text)
+        if not desktop_login_code:
+            return
+
+        user_id = message.from_user.id
+        username = message.from_user.username or message.from_user.full_name
+        register_user_if_not_exists(user_id, username, None)
+        bind_result = bind_desktop_auth_code(desktop_login_code, user_id)
+        bind_status = bind_result.get("status")
+
+        if bind_status == "bound":
+            notice_text = (
+                f"✅ Вход для Windows-клиента подтверждён.\n"
+                f"Код <b>#{desktop_login_code}</b> привязан к вашему Telegram-профилю."
+            )
+        elif bind_status == "already_bound":
+            notice_text = (
+                f"ℹ️ Код <b>#{desktop_login_code}</b> уже был подтверждён для вашего профиля."
+            )
+        elif bind_status == "expired":
+            notice_text = (
+                f"⌛ Код <b>#{desktop_login_code}</b> уже истёк.\n"
+                "Откройте приложение и запросите новый код входа."
+            )
+        elif bind_status == "conflict":
+            notice_text = (
+                f"❌ Код <b>#{desktop_login_code}</b> уже привязан к другому Telegram-профилю."
+            )
+        elif bind_status == "missing":
+            notice_text = f"❌ Код <b>#{desktop_login_code}</b> не найден."
+        else:
+            notice_text = (
+                f"❌ Не удалось подтвердить вход по коду <b>#{desktop_login_code}</b>."
+            )
+
+        await message.answer(notice_text, disable_web_page_preview=True)
 
     @user_router.callback_query(Onboarding.waiting_for_subscription_and_agreement, F.data == "check_subscription_and_agree")
     async def check_subscription_handler(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
