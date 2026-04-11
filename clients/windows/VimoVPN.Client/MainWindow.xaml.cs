@@ -167,7 +167,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var response = await _apiClient.StartAuthSessionAsync(_config.ClientName, CancellationToken.None);
             if (!response.Ok || response.Session is null || string.IsNullOrWhiteSpace(response.Session.SessionId))
             {
-                AuthStatusText = $"Не удалось создать код: {response.Error ?? "unknown_error"}";
+                var errorText = response.Error ?? "unknown_error";
+                if (!string.IsNullOrWhiteSpace(response.Details) && !string.Equals(response.Details, errorText, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorText = $"{errorText}";
+                }
+                AuthStatusText = $"Не удалось создать код: {errorText}";
                 return;
             }
 
@@ -442,7 +447,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var loginCommand = BuildLoginCommand(code);
+        var loginCommand = (_currentSession?.LoginCommand ?? BuildLoginCommand(code)).Trim();
         var copied = TryCopyToClipboard(loginCommand);
         try
         {
@@ -454,8 +459,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
         AuthStatusText = copied
-            ? $"Открыт {TelegramHandleText}. Команда {loginCommand} скопирована."
-            : $"Открыт {TelegramHandleText}.";
+            ? $"Открыт Telegram. Команда {loginCommand} скопирована."
+            : "Открыт Telegram.";
     }
 
     private void UpdateServerPings(IEnumerable<ResolvedServerOption> candidates)
@@ -583,9 +588,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static string BuildTelegramAuthUrl(string? publicTelegramUrl, string? fallbackBotUrl, string? code)
     {
         var cleanCode = (code ?? string.Empty).Trim().ToUpperInvariant();
-        var baseUrl = !string.IsNullOrWhiteSpace(publicTelegramUrl)
-            ? publicTelegramUrl!.Trim()
-            : (fallbackBotUrl ?? string.Empty).Trim();
+        var baseUrl = !string.IsNullOrWhiteSpace(fallbackBotUrl)
+            ? fallbackBotUrl!.Trim()
+            : (publicTelegramUrl ?? string.Empty).Trim();
 
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -598,6 +603,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         if (baseUrl.Contains("start=", StringComparison.OrdinalIgnoreCase))
+        {
+            return baseUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(fallbackBotUrl))
         {
             return baseUrl;
         }

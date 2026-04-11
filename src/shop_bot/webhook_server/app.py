@@ -956,54 +956,64 @@ def create_webhook_app(bot_controller_instance):
 
     @flask_app.route('/desktop-app/auth/start', methods=['POST'])
     def desktop_auth_start():
-        payload = request.get_json(silent=True) or {}
-        client_name = str(payload.get("client_name") or request.form.get("client_name") or "VimoVPN Windows").strip()
-        session_id = ""
-        code = ""
-        access_token = ""
-        code_expires_at = None
-        token_expires_at = None
+        try:
+            payload = request.get_json(silent=True) or {}
+            client_name = str(payload.get("client_name") or request.form.get("client_name") or "VimoVPN Windows").strip()
+            session_id = ""
+            code = ""
+            access_token = ""
+            code_expires_at = None
+            token_expires_at = None
 
-        for _ in range(10):
-            candidate_session_id = str(uuid.uuid4())
-            candidate_code = _generate_instant_access_code(8)
-            candidate_access_token = secrets.token_urlsafe(32)
-            candidate_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
-            candidate_token_expires_at = datetime.utcnow() + timedelta(days=30)
-            if create_desktop_auth_session(
-                session_id=candidate_session_id,
-                code=candidate_code,
-                access_token=candidate_access_token,
-                code_expires_at=candidate_code_expires_at,
-                token_expires_at=candidate_token_expires_at,
-                client_name=client_name,
-            ):
-                session_id = candidate_session_id
-                code = candidate_code
-                access_token = candidate_access_token
-                code_expires_at = candidate_code_expires_at
-                token_expires_at = candidate_token_expires_at
-                break
+            for _ in range(10):
+                candidate_session_id = str(uuid.uuid4())
+                candidate_code = _generate_instant_access_code(8)
+                candidate_access_token = secrets.token_urlsafe(32)
+                candidate_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
+                candidate_token_expires_at = datetime.utcnow() + timedelta(days=30)
+                if create_desktop_auth_session(
+                    session_id=candidate_session_id,
+                    code=candidate_code,
+                    access_token=candidate_access_token,
+                    code_expires_at=candidate_code_expires_at,
+                    token_expires_at=candidate_token_expires_at,
+                    client_name=client_name,
+                ):
+                    session_id = candidate_session_id
+                    code = candidate_code
+                    access_token = candidate_access_token
+                    code_expires_at = candidate_code_expires_at
+                    token_expires_at = candidate_token_expires_at
+                    break
 
-        if not session_id or not code or not access_token or not code_expires_at or not token_expires_at:
-            return jsonify({"ok": False, "error": "session_create_failed"}), 500
+            if not session_id or not code or not access_token or not code_expires_at or not token_expires_at:
+                return jsonify({"ok": False, "error": "session_create_failed"}), 500
 
-        bot_url = _desktop_login_url(code)
-        if not bot_url:
-            return jsonify({"ok": False, "error": "telegram_bot_username_missing"}), 500
-
-        return jsonify({
-            "ok": True,
-            "session": {
+            bot_url = _desktop_login_url(code)
+            session_payload = {
                 "session_id": session_id,
                 "code": code,
                 "display_code": f"#{code}",
                 "bot_url": bot_url,
+                "login_command": f"/login={code}",
                 "status_url": f"{_public_base_url()}{url_for('desktop_auth_status', session_id=session_id)}",
                 "code_expires_at_timestamp_ms": int(code_expires_at.timestamp() * 1000),
                 "token_expires_at_timestamp_ms": int(token_expires_at.timestamp() * 1000),
             }
-        })
+            if not bot_url:
+                session_payload["warning"] = "telegram_bot_username_missing"
+
+            return jsonify({
+                "ok": True,
+                "session": session_payload,
+            })
+        except Exception as exc:
+            logger.error("Desktop auth start failed: %s", exc, exc_info=True)
+            return jsonify({
+                "ok": False,
+                "error": "desktop_auth_start_failed",
+                "details": str(exc),
+            }), 500
 
     @flask_app.route('/desktop-app/auth/status/<session_id>')
     def desktop_auth_status(session_id: str):

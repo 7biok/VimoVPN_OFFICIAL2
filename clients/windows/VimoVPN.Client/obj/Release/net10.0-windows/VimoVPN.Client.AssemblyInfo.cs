@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VimoVPN.Client")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+90dc4bbc41c4611bf66c5c855c549f8cc6ac0fba")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8a97804c21cad4415d8348d61ee598e0e3e11249")]
 [assembly: System.Reflection.AssemblyProductAttribute("VimoVPN.Client")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VimoVPN.Client")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

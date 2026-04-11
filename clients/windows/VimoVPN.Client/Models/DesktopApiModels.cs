@@ -10,6 +10,9 @@ public sealed class AuthSessionStartResponse
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 
+    [JsonPropertyName("details")]
+    public string? Details { get; set; }
+
     [JsonPropertyName("session")]
     public DesktopAuthSessionDto? Session { get; set; }
 }
@@ -21,6 +24,9 @@ public sealed class AuthStatusResponse
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    [JsonPropertyName("details")]
+    public string? Details { get; set; }
 
     [JsonPropertyName("status")]
     public string? Status { get; set; }
@@ -52,6 +58,12 @@ public sealed class DesktopAuthSessionDto
     [JsonPropertyName("bot_url")]
     public string? BotUrl { get; set; }
 
+    [JsonPropertyName("login_command")]
+    public string? LoginCommand { get; set; }
+
+    [JsonPropertyName("warning")]
+    public string? Warning { get; set; }
+
     [JsonPropertyName("status_url")]
     public string? StatusUrl { get; set; }
 
@@ -69,6 +81,9 @@ public sealed class DesktopProfileResponse
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    [JsonPropertyName("details")]
+    public string? Details { get; set; }
 
     [JsonPropertyName("user")]
     public DesktopUserSummaryDto? User { get; set; }
